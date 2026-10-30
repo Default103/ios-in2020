@@ -1,0 +1,76 @@
+name: IN2020 host and QEMU diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_run:
+        description: Successful XNU workflow run in this repository
+        required: true
+        default: '41134732882'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test SEC packet decoder with sanitizers
+        run: |
+          clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/sec_event.c in2020/sec_event_test.c -o sec-test
+          ./sec-test
+      - name: Cross-compile ARM64 diagnostic modules
+        run: |
+          clang --target=aarch64-none-elf -O2 -ffreestanding -nostdlib -mgeneral-regs-only -Wall -Wextra -Werror -c in2020/sec_event.c -o sec_event.o
+          clang --target=aarch64-none-elf -O2 -ffreestanding -nostdlib -mgeneral-regs-only -Wall -Wextra -Werror -c in2020/in2020_probe.c -o in2020_probe.o
+          file sec_event.o in2020_probe.o
+
+  qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xnu-kernel
+          run-id: ${{ inputs.kernel_run }}
+          github-token: ${{ github.token }}
+          path: kernel
+      - name: Install emulator tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-arm llvm
+      - name: Verify kernel and prepare emulated payload
+        run: |
+          (cd kernel && sha256sum -c SHA256SUMS)
+          mkdir -p diagnostic
+          python3 tools/mkadt.py diagnostic/qemu.adt --qemu
+          python3 tools/mkpayload.py kernel/kernel.development.sweet diagnostic/qemu.adt diagnostic/payload.bin --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam rd=md0 sweetlog=0 sweettouch=0 sweetkeys=0 sweetusb=0'
+      - name: Capture 30 second kernel console snapshot
+        run: |
+          python3 tools/qemu-sweet.py diagnostic/payload.bin diagnostic/qemu --secs 30 --kernel kernel/kernel.development.sweet
+          python3 - <<'PY'
+          import json, pathlib
+          root = pathlib.Path('diagnostic/qemu')
+          result = json.loads((root/'result.json').read_text())
+          text = (root/'fb.txt').read_text()
+          print(text)
+          print('Snapshot status:', result)
+          assert result['status'] in ('panic', 'no_panic_observed'), result
+          assert text.strip(), 'No decoded kernel output'
+          print('Only console-output reachability is checked. No root filesystem is supplied; a root-device stop/panic is expected. This is not a boot-success test.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qemu-diagnostic
+          path: |
+            diagnostic/qemu/fb.png
+            diagnostic/qemu/fb.txt
+            diagnostic/qemu/regs.txt
+            diagnostic/qemu/result.json
+            diagnostic/qemu/serial.txt
+          retention-days: 7
