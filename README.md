@@ -1,3 +1,15 @@
+# IN2020 experimental fork
+
+Target: OnePlus 8 Pro IN2020 (SM8250). **iOS has not booted on this phone. Do not flash upstream SWEET images to IN2020.**
+
+The ARM64 XNU baseline built successfully in [run 41134732882](https://github.com/Default103/ios-in2020/actions/runs/41134732882). [Diagnostic run 41137071555](https://github.com/Default103/ios-in2020/actions/runs/41137071555) passed host sanitizer/ARM64 compilation checks and captured QEMU executing XNU up to the expected `md0 has not been configured` panic, with zero unknown console glyphs. That diagnostic supplies no root filesystem: a passing capture is **not** an iOS boot result.
+
+See [in2020](in2020/README.md) for the initial CPU probe and SEC event decoder, and the IN2020 handoff at the top of [NOTES.md](NOTES.md) for measured hardware differences and outstanding work. Display initialization, memory placement, SEC transport, UFS integration and userspace boot remain unverified on IN2020. Device backups and Apple firmware stay local.
+
+The following README is preserved upstream documentation for **Redmi Note 10 Pro / SWEET**. Its boot and flashing instructions are not IN2020 instructions.
+
+---
+
 # ios-sweet
 
 **Apple's iOS 16 running on a Redmi Note 10 Pro.**
