@@ -1,3 +1,20 @@
+# IN2020 handoff — 2026-10-30
+
+This fork targets OnePlus 8 Pro IN2020 / SM8250. It has NOT booted iOS on that phone. The historical SWEET notes below describe the upstream Redmi Note 10 Pro and must not be treated as IN2020 results.
+
+- Baseline XNU source: upstream 45263bee51df4a0f55cdf9c649af886399488ddb. Cloud run 41134732882 at workflow commit 22b20d9990780c77625ead22ff3ac786e57ee6fc succeeded on macos-15. `kernel.development.sweet` is an ARM64 Darwin 22.6.0 / XNU 8796.141.3 executable; SHA256 a40153ac9621a7636f79f24aa73774e48851767c6dfc054b7d47ac81a6fc4f54. This remains a SWEET baseline, not an IN2020 kernel.
+- `in2020/` contains a CPU-register-only probe object and SEC event decoder. Host address/undefined sanitizers and ARM64 object compilation passed in diagnostic runs 41136379455 and 41136622989. The probe is not a bootable shim.
+- QEMU run 41136379455 failed before kernel execution because default networking required missing efi-virtio.rom. Commit f89475ef9e578cb2980882e9de131da4cdde688b disables unused networking.
+- Run 41136622989 then executed XNU through CPU/SGI, platform, framebuffer and VM/ATM initialization. It captured framebuffer and registers but the strict decoder reported `incomplete_decode`, two unknown glyphs, so the workflow correctly FAILED. No root filesystem or launchd was supplied. A 30-second framebuffer snapshot proves early execution only; no complete boot or absence of later panic is established.
+- Actual bound touchscreen: SEC `sec-s6sy761` at I2C address 0x48, controller 0xa94000, IRQ GPIO39, reset GPIO38. FTS 0x49 and Synaptics 0x4b nodes are unbound and must not be treated as the active touch. Decoder handles the SEC 8-byte coordinate event format; transport and HID integration are still absent.
+- IN2020 virtual timer interrupt is 27, not SWEET's phone default 19. Recovery DT GICD 0x17a00000, GICR 0x17a60000. Samsung ANA6706 DSC command mode and IRIS require separate retained-scanout/refresh investigation. ABL framebuffer pitch/format are unverified. Do not copy SWEET's video-mode display trigger.
+- Recovery RAM banks differ from SWEET; memory and all reserved regions must be validated before choosing a payload placement. Keep single-CPU operation until topology and PSCI are measured. UFS controller base alone does not validate inherited controller state or LUN geometry. No experimental UFS writes.
+- Apple iPhone X iOS 16.7.16 / 20H392 manifest and D22AP tree were obtained locally from Apple's CDN. Container ZIP CRC32 and DeviceTree BuildManifest SHA384 matched; the decompressed tree parsed completely. Apple files and device backups stay private and are NOT committed or uploaded as public artifacts.
+
+Next: obtain a stable longer QEMU console; construct an IN2020-specific ADT and boot entry only after verifying safe RAM placement and ABL scanout; integrate SEC transport separately; prepare a local iOS root filesystem without public Apple artifacts. Preserve stock boot/recovery and calibration backups. Temporary recovery access is not evidence of XNU phone execution. Do not flash the generic SWEET image to IN2020.
+
+---
+
 # iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
 
 ## Agent handoff / active work (2026-10-15, latest)
