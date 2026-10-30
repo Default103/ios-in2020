@@ -11,7 +11,9 @@ This fork targets OnePlus 8 Pro IN2020 / SM8250. It has NOT booted iOS on that p
 - Recovery RAM banks differ from SWEET; memory and all reserved regions must be validated before choosing a payload placement. Keep single-CPU operation until topology and PSCI are measured. UFS controller base alone does not validate inherited controller state or LUN geometry. No experimental UFS writes.
 - Apple iPhone X iOS 16.7.16 / 20H392 manifest and D22AP tree were obtained locally from Apple's CDN. Container ZIP CRC32 and DeviceTree BuildManifest SHA384 matched; the decompressed tree parsed completely. Apple files and device backups stay private and are NOT committed or uploaded as public artifacts.
 
-Next: obtain a stable longer QEMU console; construct an IN2020-specific ADT and boot entry only after verifying safe RAM placement and ABL scanout; integrate SEC transport separately; prepare a local iOS root filesystem without public Apple artifacts. Preserve stock boot/recovery and calibration backups. Temporary recovery access is not evidence of XNU phone execution. Do not flash the generic SWEET image to IN2020.
+Update: run 41137071555 passed the 120-second diagnostic capture with zero unknown glyphs. XNU panicked because md0 was not configured, as expected without a supplied root image. Three local iOS root/cryptex DMGs subsequently passed ZIP CRC32 and BuildManifest SHA384 checks. The user confirms a visible TWRP UI; legacy DRM metadata with no active CRTC does NOT establish that the phone display is inactive.
+
+Next: construct an IN2020-specific ADT and boot entry only after verifying safe RAM placement and ABL scanout; integrate SEC transport separately; prepare a local iOS root filesystem without public Apple artifacts. Preserve stock boot/recovery and calibration backups. Temporary recovery access is not evidence of XNU phone execution. Do not flash the generic SWEET image to IN2020.
 
 ---
 
