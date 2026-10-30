@@ -48,10 +48,10 @@ jobs:
           (cd kernel && sha256sum -c SHA256SUMS)
           mkdir -p diagnostic
           python3 tools/mkadt.py diagnostic/qemu.adt --qemu
-          python3 tools/mkpayload.py kernel/kernel.development.sweet diagnostic/qemu.adt diagnostic/payload.bin --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam rd=md0 sweetlog=0 sweettouch=0 sweetkeys=0 sweetusb=0'
-      - name: Capture 30 second kernel console snapshot
+          python3 tools/mkpayload.py kernel/kernel.development.sweet diagnostic/qemu.adt diagnostic/payload.bin --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 rd=md0 sweetlog=0 sweettouch=0 sweetkeys=0 sweetusb=0'
+      - name: Capture 120 second kernel console snapshot
         run: |
-          python3 tools/qemu-sweet.py diagnostic/payload.bin diagnostic/qemu --secs 30 --kernel kernel/kernel.development.sweet
+          python3 tools/qemu-sweet.py diagnostic/payload.bin diagnostic/qemu --secs 120 --kernel kernel/kernel.development.sweet
           python3 - <<'PY'
           import json, pathlib
           root = pathlib.Path('diagnostic/qemu')
