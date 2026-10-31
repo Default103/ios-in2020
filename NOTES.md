@@ -10,7 +10,11 @@ Physical IN2020 has booted XNU and iOS 16.7.16 / 20H392 through the UFS-backed u
 - Standalone read-only touch preflight image compiled, loaded and accepted by Fastboot; visual/register result pending user photo. Local image projects/ios-in2020/touch-preflight/build/in2020-touch-preflight.img SHA256 87bd748e95593ac5b055d7f4188bfae61ac1f5f849eb6332290511eebb18f270. It reads GCC/TLMM, and reads GENI registers only if all five relevant clocks are running. No I2C command, MMIO write, regulator vote, firmware upload or storage access. No claim of working touch.
 - A local SweetHID geometry patch draft replaces hardcoded 1080x2400 with boot framebuffer dimensions and matches AppleCLCD's logical crop. Not kernel-built or phone-tested yet.
 
-NEXT: obtain complete touch preflight photograph, record clock/FW/FIFO/pin observations, then implement a gated SEC transport for verified inherited state. Do not enable the existing Redmi touch path or its ldoc11 power vote on IN2020. Preserve quiet GUI fallback and userdata root. Device dumps, photos, serial and Apple files remain local/private.
+UPDATE: first preflight photo confirms GCC vote 0x063c0040, M-AHB 0, S-AHB 0x80000002, core2x/core 0x4220, SE5 branch 0x80004220, RCG CMD 0x80000000 / CFG 0x00100000 / DFS 0x21. GPIO36-39 CFG=1 and IO=0. SE reads were correctly skipped; no exception shown. Photo and transcription are local/private.
+
+Clock-only probe built and accepted by Fastboot; awaiting new photo. SHA256 888106859f459add98809fca793ff245ee7a8c22854eb68ffbd1b5102aacedd1. It temporarily votes wrapper1/SE5 at GCC+0x52008 bits18..21,27 and clears slave-AHB HWCG bit1 at GCC+0x18008. Checks all five branch halt bits with a bounded 100 ms wait before reading SE. Does not alter RCG rates, PLLs, GPIO, regulators, I2C, firmware or storage. Restores original own vote/HWCG bits before normal halt; an MMIO exception instead requires restart. No physical clock-restore or firmware result is claimed yet. DFS level configuration stride verified from pinned official clk-rcg2.c: 0x1c + 4*level.
+
+NEXT: obtain clock-probe photograph (AFTER branches, SE firmware/FIFO state if reached, and RESTORED). Then implement a gated SEC transport for verified inherited state. Do not enable the existing Redmi touch path or its ldoc11 power vote on IN2020. Preserve quiet GUI fallback and userdata root. Device dumps, photos, serial and Apple files remain local/private.
 
 ---
 
