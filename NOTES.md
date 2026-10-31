@@ -1,5 +1,23 @@
 # IN2020 handoff - 2026-10-31
 
+## UPDATE: first IN2020 A650 kernel and private test image built
+
+GitHub Actions run 41223649159 succeeded from branch `in2020-current`, commit
+`2ff00e6`.  Kernel SHA256 is
+`14cdebaa0f1d075379c8ff7894dc047482a54807a2d8cd1fbe79e17ffc99c601`.
+Patches 0095-0113 bring the Apollo A650 stack and 0114 changes the ZAP reserved
+pool to the measured IN2020 value `0x8c51a000+0x2000`; do not use Apollo's or
+the contributor package's pool.  The phone's own `a650_gmu.bin`,
+`a650_sqe.fw`, `a650_zap.mdt` and `a650_zap.b02` were extracted from a
+read-only `vendor_a` mount and remain local/private.  The temporary image is
+`builds/xnu-41223649159/in2020-gpu-userland/in2020-ios16-gpu-test-boot.img`,
+SHA256 `0515382a93a6866d7be11270de7b654855c6c7132d103721cda672f28f041247`.
+It uses the already phone-confirmed userdata root and quiet framebuffer path,
+with `sweetgpu=22 sweetgpuzap=3 sweetgpukeep=1`.  Status is
+BUILT_NOT_PHONE_TESTED; use temporary `fastboot boot` only.  It does not yet
+contain the IN2020 SEC touch transport or live battery bridge, so do not claim
+those are integrated merely because the GPU build passed.
+
 ## Active request: community touch/power/GPU integration
 
 User supplied instantnoodlep-driver-source-share and requested joint testing before camera adaptation. PMIC observer-read photo now confirms both actual touch rails disabled: L13 3008mV, L1 1800mV, owner4/AOP; see local hardware/touch-power-status-phone-20261031.json. First VIO-only diagnostic was safely rejected before writes because raw PMIC mode2 did not match the erroneous extra mode7 guard. New enable-only single-command client preserves raw mode2 and voltage1800, passes nine host model groups, and was accepted by Fastboot; awaiting complete guard/on/off/restore photo. No analogue rail enable, I2C, direct PMIC or storage writes in this VIO probe. 88 package hashes pass. 17/22 original host suites pass under Linux GCC; five lack generated inputs. Extra direct SEC/HFI tests pass. Portable SEC queue/HID-coordinate adapter and battery cache compiled ARM64; source only, not linked to the phone kernel. See in2020/community/README.md and local integration/community-20261031 for precise source provenance, logs, limitations and required missing input list. Community architecture is resident UEFI/Hakios/Mesa, different from our CPU0 bare-metal ios-sweet loader. Main GPU MMIO/chipid matches, but supplied ZAP [0x8e21a000,+0x2000) overlaps current captured CDSP [0x8d500000,0x8e900000). Do not enable reference UMI GPU code or seven-core flags. No phone command, flash or replacement image in this integration round. Local test VM was cleanly shut down. User has only the package; do not ask again for a full companion repository. Public Hakios and ios-apollo source references (207 Git-blob-verified files) have been recovered at pinned commits; see local public-upstream-recovery.json. Own FDT GPU pool is 0x8c51a000+0x2000; source-only GPU candidate uses this, not contributor/Apollo pool. Continue independent ABI/firmware/SMMU review and touch/battery integration. Camera adaptation remains conditional on actual joint hardware success.
