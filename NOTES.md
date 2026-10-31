@@ -1,5 +1,17 @@
 # IN2020 handoff - 2026-10-31
 
+## UPDATE: IN2020 SEC touch and power integrated (awaiting cloud build/phone test)
+
+Patch 0114 replaces the Redmi SE7 Goodix/FocalTech path with the community
+IN2020 S6SY791 implementation: GPIO36/37 open-drain I2C at address 0x48,
+reset GPIO38, IRQ GPIO39, verified identity AC:37:91, boot/application checks,
+SENSE_ON, 10-contact event decoding and direct SweetHID delivery.  It votes
+only the two phone-verified rails through CmdDB/RPMh: ldoc1 at 1800mV followed
+by ldoa13 at 3008mV, using the measured free ACTIVE TCS1.  Enable with
+`sweettouch=1 sweettouchdelay=20`.  Source integration is complete, but do
+not call it phone-tested until the new kernel reaches the lock screen and
+touch gestures are observed.  Continue to use temporary `fastboot boot`.
+
 ## UPDATE: first IN2020 A650 kernel and private test image built
 
 GitHub Actions run 41223649159 succeeded from branch `in2020-current`, commit

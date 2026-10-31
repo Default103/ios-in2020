@@ -129,6 +129,7 @@ What the less obvious boot-args do:
 | `sweetfb_noconsole=1` | Stop drawing kernel text over the GUI. It still goes to the persistent log; panics are drawn |
 | `sweetfb_hz=30` | Panel refresh rate of the CPU copy |
 | `sweettouch=0`, `sweetkeys=0` | Disable the touch or button driver |
+| `sweettouch=1 sweettouchdelay=20` | Enable the IN2020 S6SY791 touch path after a 20-second boot delay |
 
 ### 4. Flash the root and boot
 
