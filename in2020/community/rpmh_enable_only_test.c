@@ -71,7 +71,7 @@ static uint32_t rp_vote(uint32_t address, uint32_t mv, int enable) {
     /* mv validates the pre-existing setpoint; it is NEVER transmitted.
      * This VIO-only diagnostic sends one VRM_ENABLE write, as Linux's
      * rpmh_regulator_set_enable_state(). No voltage/mode request. */
-    int target_ok = address == tp_resource[1] && address == 0x43000 && mv == 1800 && tp_matches[1] == 1;
+    int target_ok = address == tp_resource[1] && address == 0x42e00 && mv == 1800 && tp_matches[1] == 1;
     if (!target_ok ||
         (enable != 0 && enable != 1) || !tp_inventory_done || !tp_geometry_valid || tp_db_rc != 0 ||
         tp_rsc[0] != 0x20000 || tp_rsc[2] != 0x800c8104 ||
@@ -199,7 +199,7 @@ static void mock_rp_write(uint32_t offset, uint32_t value) {
     if (offset == TCS1_BASE + 0x14 && value == 0x1010000u) {
         assert(rsc[(0xd00u+TCS1_BASE+0x1cu)/4]==1);
         assert(rsc[(0xd00u+TCS1_BASE+0x10u)/4]==1);
-        assert(rsc[(0xd00u+TCS1_BASE+0x34u)/4]==0x43004u);
+        assert(rsc[(0xd00u+TCS1_BASE+0x34u)/4]==0x42e04u);
         for (unsigned c = 0; c < 3; ++c) {
             uint32_t b = TCS1_BASE + c * 0x14;
             captured[c][0] = rsc[(0xd00u + b + 0x30u) / 4];
@@ -257,7 +257,7 @@ static void init_state(void) {
     gic_group = 1u << 5;  /* IRQ 37: Group 1. */
     gic_enable = 0;       /* masked */
     gic_config = 0;       /* level-triggered */
-    tp_resource[1] = 0x43000; tp_matches[1] = 1;
+    tp_resource[1] = 0x42e00; tp_matches[1] = 1;
     tp_rsc[0] = 0x20000; tp_rsc[1] = 0; tp_rsc[2] = 0x800c8104;
     tp_db_rc = 0; tp_inventory_done = 1; tp_geometry_valid = 1;
     rp_poisoned = 0;
@@ -325,43 +325,43 @@ static void assert_tpl_restored(void) {
 }
 static void test_success_on_off_preserves_firmware_state(void) {
     init_state();
-    assert(rp_vote(0x43000, 1800, 1) == 0);
-    assert_vote_payload(0x43000, 1800, 1); assert_tcs1_restored(); assert_no_tcs0_writes();
+    assert(rp_vote(0x42e00, 1800, 1) == 0);
+    assert_vote_payload(0x42e00, 1800, 1); assert_tcs1_restored(); assert_no_tcs0_writes();
     assert(write_count > 0 && read_gic_count == 3); assert_tpl_restored();
     assert(gic_group == (1u << 5) && gic_enable == 0 && gic_config == 0);
 
     unsigned writes_before_off = write_count;
-    assert(rp_vote(0x43000, 1800, 0) == 0);
-    assert_vote_payload(0x43000, 1800, 0); assert_tcs1_restored(); assert_no_tcs0_writes();
+    assert(rp_vote(0x42e00, 1800, 0) == 0);
+    assert_vote_payload(0x42e00, 1800, 0); assert_tcs1_restored(); assert_no_tcs0_writes();
     assert(write_count > writes_before_off && read_gic_count == 6); assert_tpl_restored();
     assert(gic_group == (1u << 5) && gic_enable == 0 && gic_config == 0);
 }
 
 static void test_whitelisted_ldoa13_payload_and_other_targets_reject(void) {
- init_state();tp_resource[0]=0x40d00;tp_matches[0]=1;
- assert(rp_vote(0x40d00,3008,1)==3 && write_count==0);
- assert(rp_vote(0x43000,1801,1)==3 && write_count==0);
+ init_state();tp_resource[0]=0x40b00;tp_matches[0]=1;
+ assert(rp_vote(0x40b00,3008,1)==3 && write_count==0);
+ assert(rp_vote(0x42e00,1801,1)==3 && write_count==0);
  assert(rp_vote(0x44000,1800,1)==3 && write_count==0);
 }
 static void test_argument_inventory_and_geometry_guards(void) {
     init_state(); assert(rp_vote(0x43008, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
-    init_state(); tp_geometry_valid = 0; assert(rp_vote(0x43000, 1800, 1) == 3);
+    init_state(); tp_geometry_valid = 0; assert(rp_vote(0x42e00, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
-    init_state(); tp_db_rc = 1; assert(rp_vote(0x43000, 1800, 1) == 3);
+    init_state(); tp_db_rc = 1; assert(rp_vote(0x42e00, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
-    init_state(); tp_matches[1] = 2; assert(rp_vote(0x43000, 1800, 1) == 3);
+    init_state(); tp_matches[1] = 2; assert(rp_vote(0x42e00, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
-    init_state(); tp_rsc[0] = 0xffffffff; assert(rp_vote(0x43000, 1800, 1) == 3);
+    init_state(); tp_rsc[0] = 0xffffffff; assert(rp_vote(0x42e00, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
-    init_state(); tp_rsc[2] = 0xffffffff; assert(rp_vote(0x43000, 1800, 1) == 3);
+    init_state(); tp_rsc[2] = 0xffffffff; assert(rp_vote(0x42e00, 1800, 1) == 3);
     assert(write_count == 0 && read_gic_count == 0 && tpl_raises == 0);
 }
 
 static void assert_nonlatching_vote_keeps_source_masked(void) {
     completion_mode = 1; /* Busy/incomplete first, then complete without IRQ. */
     assert(rp_latch_irq == 0);
-    assert(rp_vote(0x43000, 1800, 1) == 0);
+    assert(rp_vote(0x42e00, 1800, 1) == 0);
     assert(rp_latch_irq == 0 && rp_last_irq == 0x20);
     assert(source_unmasked_reads == 0 && source_unmasked_writes == 0);
     assert(gic_write_count == 0 && gic_group != 0xffffffffu);
@@ -377,13 +377,13 @@ static void test_nonlatching_gic_states_use_progress_without_irq(void) {
 }
 static void test_all_ones_gic_rejects_without_writes(void) {
     init_state(); gic_group = UINT32_MAX;
-    assert(rp_vote(0x43000, 1800, 1) == 4);
+    assert(rp_vote(0x42e00, 1800, 1) == 4);
     assert(write_count == 0 && tpl_raises == 0 && tpl_restores == 0);
     assert(gic_write_count == 0);
 }
 
 static void assert_preflight_reject(uint32_t expected) {
-    assert(rp_vote(0x43000, 1800, 1) == expected);
+    assert(rp_vote(0x42e00, 1800, 1) == expected);
     assert(write_count == 0 && tpl_raises == 1 && tpl_restores == 1);
     assert_tpl_restored();
 }
@@ -394,9 +394,9 @@ static void test_slot_irq_and_conflict_guards(void) {
     init_state(); rsc[0xd04u / 4] |= 2u; /* pending TCS1 completion */
     assert_preflight_reject(5);
 
-    init_state(); rsc[(0xd00u + 0x34u) / 4] = 0x43000;
+    init_state(); rsc[(0xd00u + 0x34u) / 4] = 0x42e00;
     assert_preflight_reject(5);
-    assert(get_rsc(0x34) == 0x43000); /* inherited TCS0 payload preserved */
+    assert(get_rsc(0x34) == 0x42e00); /* inherited TCS0 payload preserved */
 }
 
 static void test_all_ones_source_is_never_rmw_written(void) {
@@ -407,27 +407,27 @@ static void test_all_ones_source_is_never_rmw_written(void) {
 
 static void test_timeout_poison_quarantines_and_blocks_retry(void) {
     init_state(); completion_mode = 3;
-    assert(rp_vote(0x43000, 1800, 1) == 11);
+    assert(rp_vote(0x42e00, 1800, 1) == 11);
     assert(rp_poisoned == 1 && write_count > 0 && tpl_level == 5);
     assert(tpl_raises == 1 && tpl_restores == 1);
     assert((get_rsc(0) & 2u) == 0); /* uncertain source remains masked */
     unsigned writes_after_timeout = write_count;
     unsigned raises_after_timeout = tpl_raises;
-    assert(rp_vote(0x43000, 1800, 0) == 2);
+    assert(rp_vote(0x42e00, 1800, 0) == 2);
     assert(write_count == writes_after_timeout && tpl_raises == raises_after_timeout);
     assert_tpl_restored();
 }
 
 static void test_no_irq_completes_only_after_observed_progress(void) {
     init_state(); gic_group = 0; completion_mode = 1;
-    assert(rp_vote(0x43000, 1800, 1) == 0);
+    assert(rp_vote(0x42e00, 1800, 1) == 0);
     assert(rp_last_irq == 0x20 && !(rp_last_irq & 2u));
     assert(rp_latch_irq == 0 && source_unmasked_reads == 0 && source_unmasked_writes == 0);
     assert(stall_calls == 1 && rp_poisoned == 0);
     assert_tcs1_restored(); assert_no_tcs0_writes(); assert_tpl_restored();
 
     init_state(); gic_group = 0; completion_mode = 2;
-    assert(rp_vote(0x43000, 1800, 1) == 11);
+    assert(rp_vote(0x42e00, 1800, 1) == 11);
     assert(rp_last_irq == 0x20 && !(rp_last_irq & 2u));
     assert(rp_latch_irq == 0 && source_unmasked_reads == 0 && source_unmasked_writes == 0);
     assert(stall_calls == 100000 && rp_poisoned == 1);

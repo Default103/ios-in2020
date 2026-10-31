@@ -123,7 +123,7 @@ void diag_main(uint64_t dtb) {
  value(row++,"COMMAND DB RC",tp_db_rc);value(row++,"L13 RESOURCE",tp_resource[0]);value(row++,"L1 RESOURCE",tp_resource[1]);
  value(row++,"TCS1 STATUS",tp_tcs[1][0]);value(row++,"TCS1 CONTROL",tp_tcs[1][1]);
  if(!tp_geometry_valid || tp_db_rc || tp_rsc[0]!=0x20000u || tp_rsc[2]!=0x800c8104u ||
- tp_matches[0]!=1 || tp_matches[1]!=1 || tp_resource[0]!=0x40d00u || tp_resource[1]!=0x43000u) {text(row,"RSC / DB GUARD FAILED - READ ONLY STOP");return;}
+ tp_matches[0]!=1 || tp_matches[1]!=1 || tp_resource[0]!=0x40b00u || tp_resource[1]!=0x42e00u) {text(row,"RSC / DB GUARD FAILED - READ ONLY STOP");return;}
  /* Direct PMIC owner is AOP. Borrow only verified-idle apps TCS1. */
  gpio_write(0x0f526004u,reset_io&~2u);uint32_t low=(reset_cfg&~0x3ffu)|0x200u;if(low&(1u<<11))low|=1u<<12;gpio_write(0x0f526000u,low);
  uint32_t on_rc=rp_vote(tp_resource[1],1800,1);value(row++,"VIO ON RESULT",on_rc);

@@ -46,7 +46,9 @@ static uint32_t rp_vote(uint32_t address, uint32_t mv, int enable) {
     /* mv validates the pre-existing setpoint; it is NEVER transmitted.
      * This VIO-only diagnostic sends one VRM_ENABLE write, as Linux's
      * rpmh_regulator_set_enable_state(). No voltage/mode request. */
-    int target_ok = address == tp_resource[1] && address == 0x43000 && mv == 1800 && tp_matches[1] == 1;
+    /* The IN2020 H.45 CmdDB reports ldoc1 at 0x42e00.  Keep both the
+     * unique-name lookup and the measured address as independent guards. */
+    int target_ok = address == tp_resource[1] && address == 0x42e00 && mv == 1800 && tp_matches[1] == 1;
     if (!target_ok ||
         (enable != 0 && enable != 1) || !tp_inventory_done || !tp_geometry_valid || tp_db_rc != 0 ||
         tp_rsc[0] != 0x20000 || tp_rsc[2] != 0x800c8104 ||
