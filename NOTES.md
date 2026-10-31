@@ -13,8 +13,13 @@ read-only `vendor_a` mount and remain local/private.  The temporary image is
 `builds/xnu-41223649159/in2020-gpu-userland/in2020-ios16-gpu-test-boot.img`,
 SHA256 `0515382a93a6866d7be11270de7b654855c6c7132d103721cda672f28f041247`.
 It uses the already phone-confirmed userdata root and quiet framebuffer path,
-with `sweetgpu=22 sweetgpuzap=3 sweetgpukeep=1`.  Status is
-BUILT_NOT_PHONE_TESTED; use temporary `fastboot boot` only.  It does not yet
+with `sweetgpu=22 sweetgpuzap=3 sweetgpukeep=1`.  First phone test reached
+TrustZone signature acceptance but then printed the stale Apollo destination
+`0x8681a000` and entered Qualcomm Crash Dump Mode.  Do not boot SHA256
+`0515382a...f041247` again.  The standalone 0114 correction was not reflected
+in the running kernel, so the IN2020 address is now placed directly in patch
+0105 where the ZAP constants are introduced; rebuild before another test.  It
+does not yet
 contain the IN2020 SEC touch transport or live battery bridge, so do not claim
 those are integrated merely because the GPU build passed.
 

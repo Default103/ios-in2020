@@ -42,8 +42,8 @@
 +#define SCM_THREE_VALUES      3u            /* three plain numbers */
 +#define SCM_INTERRUPTED       1             /* a preempted call says so, and is made again so */
 +#define PAS_GPU               13u           /* the GPU's image number (Linux qcom_scm: the zap shader) */
-+#define ZAP_MEMORY_PA         0x8681a000u   /* apollo live DT reserved-memory pil_gpu_mem (the zap image's place) */
-+#define ZAP_MEMORY_SIZE       0x1000u       /* the a650 zap shader's one loadable segment is under a page */
++#define ZAP_MEMORY_PA         0x8c51a000u   /* IN2020 live FDT: pil_gpu_region@8c51a000 */
++#define ZAP_MEMORY_SIZE       0x2000u       /* exact IN2020 reserved-memory extent */
  #define CORE_STREAM          0u            /* apollo DT gfx3d_user iommus <0x0 0x401>: streams 0 and 1 */
  #define CORE_STREAM_MASK      0x401u        /* boot 19: mask 0x400 read back 0; written as the DT has it */
  #define CORE_MATCH            0u            /* match 1 is the GMU's */
