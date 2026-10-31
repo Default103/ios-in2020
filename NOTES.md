@@ -1,5 +1,10 @@
 # IN2020 handoff - 2026-10-31
 
+## Active request: community touch/power/GPU integration
+
+User supplied instantnoodlep-driver-source-share and requested joint testing before camera adaptation. Old standalone PMIC power probe has NOT been booted; do not run it as if this were still the immediate next action. 88 package hashes pass. 17/22 original host suites pass under Linux GCC; five lack generated inputs. Extra direct SEC/HFI tests pass. Portable SEC queue/HID-coordinate adapter and battery cache compiled ARM64; source only, not linked to the phone kernel. See in2020/community/README.md and local integration/community-20261031 for precise source provenance, logs, limitations and required missing input list. Community architecture is resident UEFI/Hakios/Mesa, different from our CPU0 bare-metal ios-sweet loader. Main GPU MMIO/chipid matches, but supplied ZAP [0x8e21a000,+0x2000) overlaps current captured CDSP [0x8d500000,0x8e900000). Do not enable reference UMI GPU code or seven-core flags. No phone command, flash or replacement image in this integration round. Local test VM was cleanly shut down. Awaiting user/contributor full source/build links. Camera adaptation remains conditional on actual joint hardware success.
+
+
 Physical IN2020 has booted XNU and iOS 16.7.16 / 20H392 through the UFS-backed userdata root. User photograph confirms lock screen; this does not establish working touch, home-screen interaction, audio or networking. User explicitly approved userdata flash. Boot/recovery/modem/calibration partitions remain unchanged; use temporary fastboot boot only.
 
 - Baseline kernel: cloud run 41134732882, SHA256 a40153ac9621a7636f79f24aa73774e48851767c6dfc054b7d47ac81a6fc4f54. RAM map, IRQ27 and framebuffer are supplied by the IN2020 loader/ADT. Single CPU only.
