@@ -40,7 +40,7 @@ static int rp_sync(uint32_t offset, uint32_t value) {
     return 0;
 }
 static int rp_empty(void) {
-    return rp_read(0x2a0+0x18) == 1 && rp_read(0x2a0+0x14) == 0x10000 &&
+    return rp_read(0x2a0+0x18) == 1 && rp_read(0x2a0+0x14) == 0 &&
         rp_read(0x2a0+0x1c) == 0 && rp_read(0x2a0+0x10) == 0 && !(rp_read(4) & 2u);
 }
 static int rp_mask_source(void) {
@@ -129,6 +129,7 @@ static uint32_t rp_vote(uint32_t address, uint32_t mv, int enable) {
     }
     if (!complete) { result = 11; goto out; }
     if (!rp_mask_source() || !rp_sync(0x2a0+0x14, 0x10000) ||
+        !rp_sync(0x2a0+0x14, 0) ||
         !rp_sync(0x2a0+0x1c, 0) || !rp_sync(0x2a0+0x10, 0)) { result = 12; goto out; }
     for (unsigned c = 0; c < 1; ++c) {
         uint32_t b = 0x2a0+c*0x14;
@@ -280,7 +281,7 @@ static void init_state(void) {
     rsc[(0xd00u + 0x38u) / 4] = 0xabcdef01;
     /* TCS1 is idle and has payload that must be restored after each vote. */
     rsc[(0xd00u + TCS1_BASE + 0x18u) / 4] = 1;
-    rsc[(0xd00u + TCS1_BASE + 0x14u) / 4] = 0x10000;
+    rsc[(0xd00u + TCS1_BASE + 0x14u) / 4] = 0;
     rsc[(0xd00u + TCS1_BASE + 0x1cu) / 4] = 0;
     rsc[(0xd00u + TCS1_BASE + 0x10u) / 4] = 0;
     for (unsigned c = 0; c < 3; ++c) {
@@ -301,7 +302,7 @@ static void assert_no_tcs0_writes(void) {
 }
 static void assert_tcs1_restored(void) {
     assert(get_rsc(TCS1_BASE + 0x18) == 1);
-    assert(get_rsc(TCS1_BASE + 0x14) == 0x10000);
+    assert(get_rsc(TCS1_BASE + 0x14) == 0);
     assert(get_rsc(TCS1_BASE + 0x1c) == 0);
     assert(get_rsc(TCS1_BASE + 0x10) == 0);
     for (unsigned c = 0; c < 3; ++c) {
@@ -390,6 +391,9 @@ static void assert_preflight_reject(uint32_t expected) {
 static void test_slot_irq_and_conflict_guards(void) {
     init_state(); rsc[(0xd00u + TCS1_BASE + 0x18u) / 4] = 0;
     assert_preflight_reject(5);
+
+    init_state(); rsc[(0xd00u + TCS1_BASE + 0x14u) / 4] = 0x10000;
+    assert_preflight_reject(5); /* armed is not idle */
 
     init_state(); rsc[0xd04u / 4] |= 2u; /* pending TCS1 completion */
     assert_preflight_reject(5);

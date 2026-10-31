@@ -15,7 +15,9 @@ static int rp_sync(uint32_t offset, uint32_t value) {
     return 0;
 }
 static int rp_empty(void) {
-    return rp_read(0x2a0+0x18) == 1 && rp_read(0x2a0+0x14) == 0x10000 &&
+    /* Linux qcom rpmh-rsc leaves an idle AMC TCS with both TRIGGER and
+     * AMC_MODE_ENABLE clear.  0x10000 is only the armed intermediate state. */
+    return rp_read(0x2a0+0x18) == 1 && rp_read(0x2a0+0x14) == 0 &&
         rp_read(0x2a0+0x1c) == 0 && rp_read(0x2a0+0x10) == 0 && !(rp_read(4) & 2u);
 }
 static int rp_mask_source(void) {
@@ -106,6 +108,7 @@ static uint32_t rp_vote(uint32_t address, uint32_t mv, int enable) {
     }
     if (!complete) { result = 11; goto out; }
     if (!rp_mask_source() || !rp_sync(0x2a0+0x14, 0x10000) ||
+        !rp_sync(0x2a0+0x14, 0) ||
         !rp_sync(0x2a0+0x1c, 0) || !rp_sync(0x2a0+0x10, 0)) { result = 12; goto out; }
     for (unsigned c = 0; c < 1; ++c) {
         uint32_t b = 0x2a0+c*0x14;

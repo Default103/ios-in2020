@@ -134,7 +134,8 @@ void diag_main(uint64_t dtb) {
   stall_us(500);
  }
  value(row++,"VIO ON ENABLE",after.en);value(row++,"VIO ON STATUS",after.status);
- uint32_t off_rc=rp_poisoned?0xffffffffu:rp_vote(tp_resource[1],1800,0);value(row++,"VIO OFF RESULT",off_rc);
+ /* Never send a compensating OFF request if ON was rejected before claim. */
+ uint32_t off_rc=rp_poisoned?0xffffffffu:on_rc?0xfffffffeu:rp_vote(tp_resource[1],1800,0);value(row++,"VIO OFF RESULT",off_rc);
  int restored=0;struct rail final={0},analog_after={0};
  if(!rp_poisoned)for(unsigned i=0;i<40;i++) {
   if(!snapshot(0x540,vio,&final))break;
@@ -142,6 +143,11 @@ void diag_main(uint64_t dtb) {
  }
  restored=restored && snapshot(0x14c,analog,&analog_after) && analog_after.en==0 &&
  final.mode==v.mode && final.lo==v.lo && final.hi==v.hi && on_rc==0 && off_rc==0 && !rp_poisoned;
+ if(on_rc && !rp_poisoned) {
+  /* No TCS command was claimed. Restore GPIO and verify the untouched rails. */
+  restored=snapshot(0x540,vio,&final) && snapshot(0x14c,analog,&analog_after) &&
+   final.en==v.en && final.mode==v.mode && final.lo==v.lo && final.hi==v.hi && analog_after.en==a.en;
+ }
  value(row++,"VIO FINAL ENABLE",final.en);value(row++,"ANALOG FINAL ENABLE",analog_after.en);
  value(row++,"RPC POISONED",rp_poisoned);value(row++,"LAST IRQ",rp_last_irq);
  if(restored) {
