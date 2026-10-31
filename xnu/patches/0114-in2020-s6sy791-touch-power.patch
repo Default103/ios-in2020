@@ -2,7 +2,7 @@ diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
 index 03defe6..7485d81 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
-@@ -1,660 +1,168 @@
+@@ -1,660 +1,167 @@
 -/*
 - * SWEET SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
 - * Call once after the scheduler is running; all work runs on one thread.
@@ -11,7 +11,7 @@ index 03defe6..7485d81 100644
 - * zero to GT9896's event status after reading a report. See touch2/report.md.
 - */
 +/* IN2020 SEC S6SY791 touch, adapted from the phone-tested community port. */
- #if defined(ARM64_BOARD_CONFIG_SWEET)
+-#if defined(ARM64_BOARD_CONFIG_SWEET)
  #include <sys/param.h>
  #include <sys/systm.h>
 -#include <sys/errno.h>
@@ -807,7 +807,6 @@ index 03defe6..7485d81 100644
 +	if(!enabled) { printf("SWEET TOUCH: disabled\n"); return; }
 +	if(kernel_thread_start(touch_thread,NULL,&t)==KERN_SUCCESS) thread_deallocate(t);
 +}
-+#endif
 diff --git a/bsd/dev/sweet_rpmh.c b/bsd/dev/sweet_rpmh.c
 index 4da50d8..6f2810d 100644
 --- a/bsd/dev/sweet_rpmh.c
