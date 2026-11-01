@@ -1,3 +1,9 @@
+## 2026-11-01 eight-CPU / 60-Hz image ready, waiting for Fastboot
+
+User requests 8 CPUs. Builder now supports --cpus 2 or 8; generated baseline-derived eight-node ADT, MPIDR 0x000..0x700 all verified against captured IN2020 FDT/PSCI, globally unique phandles. Original nodes/firmware/seed, kernel segments and loader unchanged. cpus=8 sweetfb_hz=60, homogeneous SWEET topology retained (no heterogeneous scheduler/capacity adaptation). No kernel recompile. 2-core screen result not yet reported.
+
+Image M:/ios-in2020/builds/xnu-41234547701/in2020-cpus8-fb60-20261101/in2020-ios16-cpus8-fb60-boot.img; SHA256 bc7664b7d7d015c7a1e74790c95db3e05d6c62b516a32d77530b2e3c587afdd1. ADT/MPIDR/phandle checks and packer byte checks PASS. ADB/Fastboot absent at initial checks, user asked to return Fastboot; NO eight-core boot command sent yet. Next action: recheck fastboot, then temporary boot (already authorized), record result. Report M:/ios-in2020/reports/IN2020-cpus8-fb60-20261101.md.
+
 ## 2026-11-01 restore confirmed UI success; 2-CPU / 60-Hz test boot accepted
 
 User confirms original baseline boots normally after root restore. User requested increased CPUs with 60 Hz. Created baseline-derived image using existing compiled PSCI SMP kernel: appended cpu1 node (MPIDR 0x100 verified against device FDT, unique phandle), appended cpus=2 sweetfb_hz=60. All existing ADT nodes/seed/firmware unchanged, kernel segments and loader byte-identical. No kernel recompile required. Existing one-node ADT would not enable SMP by cmdline alone.
