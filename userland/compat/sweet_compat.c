@@ -19,6 +19,7 @@ static Ivar switcher_ivar;
 static preprocessor_fn original_preprocessor;
 static _Thread_local int logging_exception;
 static unsigned exceptions_seen, setup_skips;
+extern void sweet_install_poster_preview(void);
 
 static void
 setup_once(id self, SEL command)
@@ -72,6 +73,7 @@ install_compatibility(void)
         fprintf(stderr, "sweet-compat: %s exception evidence enabled (exceptions are not suppressed)\n", name);
     }
     if (strcmp(name,"PosterBoard")) return;
+    sweet_install_poster_preview();
     Class cls = objc_getClass("PBFPosterExtensionDataStore");
     SEL sel = sel_registerName("_stateLock_setupSwitcherConfigurationForFirstTime");
     Method method = cls ? class_getInstanceMethod(cls, sel) : NULL;

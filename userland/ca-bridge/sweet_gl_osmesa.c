@@ -92,8 +92,8 @@ sweet_gl_library(void)
  * kernel's GPU service makes a buffer of the surface's memory). The drivers that draw in memory
  * of their own with this processor are not asked: they refuse every time.
  */
-int
-sweet_gl_surface_texture(struct sweet_gl *gl, uint32_t surface)
+static int
+surface_texture(struct sweet_gl *gl, uint64_t token)
 {
 	static void (*image_target)(unsigned target, void *image);
 	static int asked, software;
@@ -111,6 +111,18 @@ sweet_gl_surface_texture(struct sweet_gl *gl, uint32_t surface)
 	}
 	while (glGetError() != 0) {
 	}
-	image_target(GL_TEXTURE_2D, (void *)(uintptr_t)surface);
+	image_target(GL_TEXTURE_2D, (void *)(uintptr_t)token);
 	return glGetError() == 0;
+}
+
+int
+sweet_gl_surface_texture(struct sweet_gl *gl, uint32_t surface)
+{
+    return surface_texture(gl, surface);
+}
+
+int
+sweet_gl_surface_texture_bgra_plane0(struct sweet_gl *gl, uint32_t surface)
+{
+    return surface_texture(gl, ((uint64_t)1 << 32) | surface);
 }

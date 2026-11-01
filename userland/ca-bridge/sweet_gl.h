@@ -20,6 +20,8 @@ const char *sweet_gl_library(void);                           /* for the log */
  * done; the texture is to be filled and read back with OpenGL ES calls.
  */
 int sweet_gl_surface_texture(struct sweet_gl *gl, uint32_t surface);
+/* Explicit view of BGRA8 written by this bridge into a b3a8 target plane0. */
+int sweet_gl_surface_texture_bgra_plane0(struct sweet_gl *gl, uint32_t surface);
 
 /*
  * CoreAnimation draws a layer's pixels with one of ninety "functions" (a fragment shader each); these

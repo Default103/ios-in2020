@@ -666,7 +666,7 @@ surface_mirrored(struct eagl *e, struct image *image)
 	IOSurfaceRef surface = image->surface;
 	GLint bound = 0;
 
-	if (!blit_targets || !share_surfaces || !image->target || image->alpha_first || image->deep ||
+	if (!blit_targets || !share_surfaces || !image->target || image->alpha_first ||
 	    image->format != GL_BGRA || image->type != GL_UNSIGNED_BYTE || image->plane != 0 ||
 	    (size_t)image->width != IOSurfaceGetWidth(surface) || (size_t)image->height != IOSurfaceGetHeight(surface)) {
 		return false;
@@ -674,7 +674,8 @@ surface_mirrored(struct eagl *e, struct image *image)
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
 	glGenTextures(1, &image->mirror);
 	glBindTexture(GL_TEXTURE_2D, image->mirror);
-	if (!sweet_gl_surface_texture(e->gl, IOSurfaceGetID(surface))) {
+	if (!(image->deep ? sweet_gl_surface_texture_bgra_plane0(e->gl, IOSurfaceGetID(surface)) :
+	    sweet_gl_surface_texture(e->gl, IOSurfaceGetID(surface)))) {
 		glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
 		glDeleteTextures(1, &image->mirror);
 		image->mirror = 0;
@@ -4567,15 +4568,21 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	 * is left alone (the screen has no use for it).
 	 */
 	deep = pixels == 'b3a8' && IOSurfaceGetPlaneCount(surface) == 2 && IOSurfaceGetBytesPerElementOfPlane(surface, 0) == 4 &&
-	    IOSurfaceGetWidthOfPlane(surface, 0) == IOSurfaceGetWidth(surface) &&
-	    IOSurfaceGetHeightOfPlane(surface, 0) == IOSurfaceGetHeight(surface);
+	    IOSurfaceGetWidthOfPlane(surface, 0) >= IOSurfaceGetWidth(surface) &&
+	    IOSurfaceGetHeightOfPlane(surface, 0) >= IOSurfaceGetHeight(surface) &&
+	    IOSurfaceGetBaseAddressOfPlane(surface, 0) == IOSurfaceGetBaseAddress(surface) &&
+	    IOSurfaceGetWidth(surface) > 0 && IOSurfaceGetHeight(surface) > 0 &&
+	    IOSurfaceGetBytesPerRow(surface) >= IOSurfaceGetWidth(surface) * 4 &&
+	    IOSurfaceGetHeight(surface) <= IOSurfaceGetAllocSize(surface) / IOSurfaceGetBytesPerRow(surface);
 	if (IOSurfaceGetPlaneCount(surface) > 0 && attached < 4) {
 		say_planes(surface);
 	}
 	if (target != GL_TEXTURE_2D || texture == 0 || !(plain || deep) ||
 	    (image = image_new(e, (GLuint)texture, surface)) == NULL) {
-		say("sweet-gl: -attachImage: target %#lx, texture %d, an IOSurface of '%.4s': not done\n", target, texture,
-		    (const char *)&(uint32_t){ __builtin_bswap32(pixels) });
+		say("sweet-gl: -attachImage: target %#lx, texture %d, IOSurface %u '%.4s' %zux%zu row %zu alloc %zu: not done\n", target, texture,
+		    IOSurfaceGetID(surface), (const char *)&(uint32_t){ __builtin_bswap32(pixels) }, IOSurfaceGetWidth(surface),
+		    IOSurfaceGetHeight(surface), IOSurfaceGetBytesPerRow(surface), IOSurfaceGetAllocSize(surface));
+		say_planes(surface);
 		return NO;
 	}
 	image->target = true;

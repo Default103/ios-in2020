@@ -13,6 +13,8 @@
  * context. Mesa's and IOKit's declarations are written out here: the iPhoneOS SDK has neither.
  */
 #include <dlfcn.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOSurface/IOSurfaceRef.h>
 #include <errno.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -24,8 +26,6 @@
 
 typedef mach_port_t io_object_t;
 typedef io_object_t io_service_t;
-typedef struct __CFDictionary *CFMutableDictionaryRef;
-typedef const struct __CFDictionary *CFDictionaryRef;
 extern CFMutableDictionaryRef IOServiceMatching(const char *name);
 extern io_service_t IOServiceGetMatchingService(mach_port_t mainPort, CFDictionaryRef matching);
 extern kern_return_t IOObjectRelease(io_object_t object);
@@ -126,6 +126,93 @@ lift_memory_limit(void)
 	}
 	control(MEMORYSTATUS_CMD_GET_MEMLIMIT_PROPERTIES, getpid(), 0, &after, sizeof(after));
 	printf("sweet-gl-test: memory limit %d MB -> %d MB\n", before.active, after.active);
+}
+
+/* Real-device regression: padded b3a8 target -> explicit BGRA plane0 view,
+ * GPU blit, CPU readback of the shared allocation, separate alpha untouched. */
+extern void (*OSMesaGetProcAddress(const char *name))(void);
+extern void glBlitFramebuffer(int, int, int, int, int, int, int, int, unsigned, unsigned);
+extern void glDeleteTextures(int, const unsigned *);
+extern void glDeleteFramebuffers(int, const unsigned *);
+
+static void dict_number(CFMutableDictionaryRef d, CFStringRef key, int32_t value)
+{
+    CFNumberRef n = CFNumberCreate(NULL, kCFNumberSInt32Type, &value);
+    CFDictionarySetValue(d, key, n);
+    CFRelease(n);
+}
+
+static int surface_blit_test(void)
+{
+    CFMutableDictionaryRef props = CFDictionaryCreateMutable(NULL, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFMutableDictionaryRef planes[2];
+    for (int i = 0; i < 2; ++i) {
+        planes[i] = CFDictionaryCreateMutable(NULL, 0,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneWidth"), 80);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneHeight"), 80);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneBytesPerElement"), i ? 1 : 4);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneBytesPerRow"), i ? 128 : 320);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneOffset"), i ? 32768 : 0);
+        dict_number(planes[i], CFSTR("IOSurfacePlaneSize"), i ? 10240 : 25600);
+    }
+    const void *values[2] = {planes[0], planes[1]};
+    CFArrayRef array = CFArrayCreate(NULL, values, 2, &kCFTypeArrayCallBacks);
+    CFDictionarySetValue(props, CFSTR("IOSurfacePlaneInfo"), array);
+    dict_number(props, CFSTR("IOSurfaceWidth"), 65);
+    dict_number(props, CFSTR("IOSurfaceHeight"), 65);
+    dict_number(props, CFSTR("IOSurfaceBytesPerElement"), 4);
+    dict_number(props, CFSTR("IOSurfaceBytesPerRow"), 320);
+    dict_number(props, CFSTR("IOSurfacePixelFormat"), 0x62336138);
+    dict_number(props, CFSTR("IOSurfaceAllocSize"), 65536);
+    IOSurfaceRef surface = IOSurfaceCreate(props);
+    CFRelease(array); CFRelease(planes[0]); CFRelease(planes[1]); CFRelease(props);
+    if (!surface) { printf("sweet-gl-test: padded b3a8 surface creation FAILED\n"); return 0; }
+    unsigned textures[2] = {0}, fb[2] = {0};
+    int good = 0, rejected = 0;
+    void (*import)(unsigned, void *) = (void (*)(unsigned, void *))OSMesaGetProcAddress("glEGLImageTargetTexture2DOES");
+    if (!import || IOSurfaceGetAllocSize(surface) < 65536) goto done;
+    if (IOSurfaceLock(surface, 0, NULL) != 0) goto done;
+    memset(IOSurfaceGetBaseAddress(surface), 0xa7, 65536);
+    IOSurfaceUnlock(surface, 0, NULL);
+    while (glGetError()) {}
+    glGenTextures(2, textures); glGenFramebuffers(2, fb);
+    glBindTexture(0x0de1, textures[0]);
+    glTexImage2D(0x0de1, 0, 0x1908, 65, 65, 0, 0x1908, 0x1401, NULL);
+    glBindFramebuffer(0x8d40, fb[0]);
+    glFramebufferTexture2D(0x8d40, 0x8ce0, 0x0de1, textures[0], 0);
+    if (glCheckFramebufferStatus(0x8d40) != 0x8cd5) goto done;
+    glViewport(0, 0, 65, 65); glClearColor(.25f, .5f, .75f, 1); glClear(0x4000);
+    glBindTexture(0x0de1, textures[1]);
+    import(0x0de1, (void *)(uintptr_t)IOSurfaceGetID(surface));
+    rejected = glGetError() != 0;
+    if (!rejected) goto done; /* Native RGB10+A must NOT silently be treated as BGRA8. */
+    import(0x0de1, (void *)(uintptr_t)(((uint64_t)1 << 32) | IOSurfaceGetID(surface)));
+    if (glGetError()) goto done;
+    glBindFramebuffer(0x8d40, fb[1]);
+    glFramebufferTexture2D(0x8d40, 0x8ce0, 0x0de1, textures[1], 0);
+    if (glCheckFramebufferStatus(0x8d40) != 0x8cd5) goto done;
+    glBindFramebuffer(0x8ca8, fb[0]); glBindFramebuffer(0x8ca9, fb[1]);
+    glBlitFramebuffer(0, 0, 65, 65, 0, 0, 65, 65, 0x4000, 0x2600);
+    glFinish();
+    if (glGetError() || IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != 0) goto done;
+    const uint8_t *base = IOSurfaceGetBaseAddress(surface);
+    good = 1;
+    for (unsigned y = 0; y < 65; ++y) for (unsigned x = 0; x < 65; ++x) {
+        const uint8_t *v = base + y * 320 + x * 4;
+        if (v[0] < 189 || v[0] > 193 || v[1] < 126 || v[1] > 130 ||
+            v[2] < 62 || v[2] > 66 || v[3] != 255) good = 0;
+    }
+    for (unsigned i = 32768; i < 32768 + 10240; ++i) if (base[i] != 0xa7) good = 0;
+    IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
+done:
+    glBindFramebuffer(0x8d40, 0);
+    glDeleteFramebuffers(2, fb); glDeleteTextures(2, textures);
+    CFRelease(surface);
+    printf("sweet-gl-test: padded b3a8 plane0 GPU blit: %s (native view rejected=%d; BGRA pixels and separate alpha checked)\n",
+        good ? "PASSED" : "FAILED", rejected);
+    return good;
 }
 
 static uint64_t
@@ -284,6 +371,7 @@ main(int argc, char **argv)
 	printf("sweet-gl-test: %u frames of %d x %d, %llu us each (clear, triangle, wait); error %#x: %s\n", frames, SIZE, SIZE,
 	    (unsigned long long)(frames_us / frames), glGetError(),
 	    ok ? "MESA DRAWS WITH THE GPU" : gpu ? "FAILED (wrong pixels)" : "FAILED (software, not the GPU)");
+	ok = surface_blit_test() && ok;
 	OSMesaDestroyContext(context);
 	return ok ? 0 : 1;
 }

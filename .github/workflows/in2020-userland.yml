@@ -47,7 +47,7 @@ jobs:
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
             -O2 -Wall -Wextra -Werror -framework IOKit \
-            -o out/sweet-gl-test userland/gl-test/sweet-gl-test.c out/lib/libOSMesa.8.dylib
+            -framework CoreFoundation -framework IOSurface -o out/sweet-gl-test userland/gl-test/sweet-gl-test.c out/lib/libOSMesa.8.dylib
           codesign -s - -f out/sweet-gl-test
           file out/sweet-gl-test
           otool -L out/sweet-gl-test
@@ -69,10 +69,15 @@ jobs:
           nm -u out/lib/libsweet-gl.dylib | grep -c '_gl' || true
       - name: Build targeted PosterBoard compatibility and exception evidence
         run: |
+          set -eux
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
+            -O2 -Wall -Wextra -Werror -fobjc-arc -c userland/compat/sweet_poster_preview.m \
+            -o build-ca/sweet_poster_preview.o
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
             -O2 -Wall -Wextra -Werror -dynamiclib -install_name /usr/local/lib/libsweet-compat.dylib \
-            -framework CoreFoundation -lobjc -o out/lib/libsweet-compat.dylib userland/compat/sweet_compat.c
+            -framework CoreFoundation -framework UIKit -framework QuartzCore -framework Metal -lobjc \
+            -o out/lib/libsweet-compat.dylib userland/compat/sweet_compat.c build-ca/sweet_poster_preview.o
           codesign -s - -f out/lib/libsweet-compat.dylib
       - name: Verify packaged dynamic dependencies and signatures
         run: |

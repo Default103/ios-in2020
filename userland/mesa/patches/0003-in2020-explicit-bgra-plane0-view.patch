@@ -1,0 +1,60 @@
+--- a/src/gallium/frontends/osmesa/osmesa.c
++++ b/src/gallium/frontends/osmesa/osmesa.c
+@@ -2,7 +2,7 @@
+ osmesa_create_screen(void);
+ 
+ extern struct pipe_resource *
+-osmesa_surface_resource(struct pipe_screen *screen, uint32_t surface);
++osmesa_surface_resource(struct pipe_screen *screen, uint64_t token);
+ 
+ 
+ 
+@@ -19,7 +19,7 @@
+                         struct st_egl_image *out)
+ {
+    out->texture = osmesa_surface_resource(fscreen->screen,
+-                                          (uint32_t)(uintptr_t)image);
++                                          (uint64_t)(uintptr_t)image);
+    if (!out->texture)
+       return false;
+    out->format = out->texture->format;
+--- a/src/gallium/targets/osmesa/osmesa_target.c
++++ b/src/gallium/targets/osmesa/osmesa_target.c
+@@ -44,7 +44,7 @@
+ 
+ 
+ struct pipe_resource *
+-osmesa_surface_resource(struct pipe_screen *screen, uint32_t surface);
++osmesa_surface_resource(struct pipe_screen *screen, uint64_t token);
+ 
+ /*
+  * The memory of an IOSurface as a texture, to draw into and to draw with (Darwin on redwood):
+@@ -52,9 +52,11 @@
+  * the surface is not one plane of 32-bit pixels, blue first, in rows the GPU can address.
+  */
+ struct pipe_resource *
+-osmesa_surface_resource(struct pipe_screen *screen, uint32_t surface)
++osmesa_surface_resource(struct pipe_screen *screen, uint64_t token)
+ {
+ #ifdef GALLIUM_FREEDRENO
++   uint32_t surface = (uint32_t)token;
++   uint32_t view = (uint32_t)(token >> 32);
+    struct sweet_drm_surface s = { .surface = surface };
+    struct pipe_resource templ = {
+       .target = PIPE_TEXTURE_2D,
+@@ -67,7 +69,14 @@
+ 
+    if (gpu_fd < 0 || sweet_drm_surface(gpu_fd, &s) != 0)
+       return NULL;
+-   if (s.pixel_format != 0x42475241 /* 'BGRA' */ || s.planes != 0)
++   /* View 1 is requested ONLY by the bridge's b3a8 render-target blit.
++    * Native RGB10+A surfaces are never imported implicitly as BGRA8. */
++   if (!((view == 0 && s.pixel_format == 0x42475241 && s.planes == 0) ||
++         (view == 1 && s.pixel_format == 0x62336138 && s.planes == 2)))
++      return NULL;
++   if (!s.width || !s.height || s.row_bytes < (uint64_t)s.width * 4 ||
++       (s.row_bytes & 63) || (s.offset & 3) || s.offset >= s.size ||
++       (uint64_t)(s.height - 1) * s.row_bytes + (uint64_t)s.width * 4 > s.size - s.offset)
+       return NULL;
+    /* (the surface comes in as Linux's buffers come in by file descriptor: see sweet-drm) */
+    templ.width0 = s.width;
