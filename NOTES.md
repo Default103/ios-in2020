@@ -1,3 +1,9 @@
+## 2026-11-01 FPS follow-up (supersedes instrumentation claims below)
+
+Commit 3586534 fixes 0115 declaration order, interval copy rate, ms units and requested-frequency label; removes inaccurate sampled fence latency. Hunk check and actual application to post-0114 sources pass; full compilation pending. AO advancing alone does not prove command execution. No cumulative IRQ/HFI evidence yet.
+
+Builder now uses separate non-overwriting --fb-hz experiment directories and correct kernel commit metadata. 60/10 Hz boot images built; packer byte checks passed, NOT PHONE TESTED. Existing script/old gpu-test verification already had sweetfb_hz=60, so the 10 Hz default alone is not a proven explanation of observed slowness. fastboot devices empty; no boot or flash issued. No gh available; CI not dispatched. Details: M:/ios-in2020/reports/IN2020-fps-progress-20261101.md. Baseline images untouched. Next: phone A/B test, then compile corrected instrumentation if needed.
+
 # IN2020 handoff - 2026-10-31
 
 ## UPDATE: frame-rate evidence instrumentation committed (needs cloud build + phone test)
