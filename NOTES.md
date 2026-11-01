@@ -1,5 +1,68 @@
 # IN2020 handoff - 2026-10-31
 
+## UPDATE: frame-rate evidence instrumentation committed (needs cloud build + phone test)
+
+Goal now: find out *why* the screen updates slowly, with data rather than
+guesses. Four suspects, and they need different fixes: one CPU doing the CPU
+copy of every frame, an unfinished GPU path, a 3D core left at a low power
+level, and the panel copy rate itself (`sweetfb_hz`, 10 Hz by default since
+patch 0056, a hard ceiling on visible frames).
+
+Committed on branch `in2020-current`: **`9c5e124`** adds
+`xnu/patches/0115-in2020-gpu-frame-stats.patch` (4 hunks, 2 files; no new
+file, so `bsd/conf/files` is untouched). It adds:
+
+- a thread started when the GPU is kept on (`sweetgpukeep=1` and step 21
+  passed) printing one line every `sweetgpustats=N` seconds (default 5, `0` =
+  off), and only when something moved: fence done/running, ring rptr/wptr,
+  RBBM status/int/cpint/hw_fault, GMU status with HALTED/idle,
+  `CP_ALWAYS_ON_COUNTER` hi:lo (counts 19.2 MHz only while the block lives),
+  the MHz asked for, `swaps` received from CoreAnimation, panel `copies` with
+  the measured rate, and the copy rule in vsync ticks. `sweetgpubusy=1` adds
+  how long the last submission took to come back, in microseconds.
+- in `SweetFramebuffer.cpp`: one counter incremented where a frame is really
+  copied into the panel memory (`vsyncFired` -> `present()`), plus
+  `sweet_fb_swap_count_value()` / `sweet_fb_copy_count_value()` getters. The
+  copy rate is read from `sweetfb_hz` inside sweet_gpu.c with the same rule
+  AppleCLCD::start() uses, so no declaration-order problem arises.
+
+Reads only: nothing changes GPU state, so the working display and touch
+behaviour are unaffected. Verified with `git apply --check` and a real
+`git apply` in a sandbox (`M:\ios-in2020\logs\gitcheck`) seeded with the
+reconstructed post-0114 `bsd/dev/sweet_gpu.c` and
+`iokit/Kernel/arm/SweetFramebuffer.cpp`; the patch is LF and every hunk's
+context is unique, so a few lines of offset are harmless.
+`tools/validate-repo.py` still reports the pre-existing `0082` gap
+(0081 -> 0095) and its shell checks fail on this Windows box (WSL CPU count);
+neither has anything to do with 0115.
+
+Revert baseline, frozen and hash-verified:
+`M:\ios-in2020\builds\xnu-41234547701\in2020-gpu-userland\in2020-ios16-touch-working-boot.img`,
+18436096 bytes, SHA-256
+`54D1E4EAECB06C193C96F794DB9381C2EE220245E627F57E31ABCE0DDF04668F` (matches
+`verification.json`; the value in
+`reports/IN2020-ios16-working-baseline-20261031.md` is stale). Its kernel came
+from commit `89015dccc1b07618c8e0555deadbfb393b7aa516`, while
+`verification.json` still says `2ff00e6c...` - fix it when the next image is
+packed.
+
+Next actions, in order:
+1. Push `in2020-current` and start the XNU workflow (`workflow_dispatch`).
+   There is no `gh` CLI on this machine, so that needs the user or a token.
+2. Cheaper first test with the kernel already downloaded: repack a boot image
+   from the cached `payload-phone.bin` with `sweetfb_hz=60` added to the
+   cmdline and `fastboot boot` it. That separates the panel-copy ceiling from
+   everything else without spending a CI run.
+3. With the 0115 kernel: boot `sweetgpu=22 sweetgpuzap=3 sweetgpukeep=1
+   sweetgpustats=5 sweetgpubusy=1` and read the STATS lines. What they mean:
+   `ao counter` advancing = the core really executes; `swaps` large while
+   `panel copies` is ~10 = the copy rate is the ceiling; `fence running` for
+   seconds = submissions stall; `gmu ... HALTED` = the GMU is asleep and the
+   GPU is not fed; a non-zero `fault` = the command processor is erroring.
+4. Then the report's remaining items: a root/userdata with wallpaper and basic
+   apps, and the 15-minute touch stability test.
+
+
 ## UPDATE: IN2020 SEC touch and power integrated (awaiting cloud build/phone test)
 
 Patch 0114 replaces the Redmi SE7 Goodix/FocalTech path with the community
