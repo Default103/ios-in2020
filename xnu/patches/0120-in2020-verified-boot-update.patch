@@ -1,0 +1,168 @@
+--- /dev/null
++++ b/bsd/dev/in2020_update.c
+@@ -0,0 +1,126 @@
++/* IN2020: bounded, hash-gated userland replacement before launchd.
++ * Only six fixed /usr/local files; preserve root data, keep v2 backups.
++ * ADT fileN = oldSHA256[32],newSHA256[32],desired bytes; mode0 update,
++ * mode1 restore old bytes. No arbitrary paths, deletion or partition writes.
++ */
++#include <pexpert/arm64/board_config.h>
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <sys/fcntl.h>
++#include <sys/vnode.h>
++#include <sys/uio.h>
++#include <sys/proc.h>
++#include <kern/kalloc.h>
++#include <corecrypto/ccdigest.h>
++#include <corecrypto/ccsha2.h>
++#include <pexpert/device_tree.h>
++extern int in2020_kernel_rename(const char *,const char *);
++void in2020_update_install(void);
++#define FILES 6
++#define LIMIT (32u*1024u*1024u)
++static const char *const paths[FILES]={
++ "/usr/local/lib/libOSMesa.8.dylib","/usr/local/lib/libsweet-gl.dylib",
++ "/usr/local/lib/libsweet-ca.dylib","/usr/local/lib/libsweet-compat.dylib",
++ "/usr/local/bin/sweet-gpu-test","/usr/local/bin/sweet-gl-test"};
++struct entry {const uint8_t *old,*new,*data,*desired;size_t size;bool change,done;char stage[192],backup[192];};
++static void digest(const void *bytes,size_t n,uint8_t out[32]) {
++ const struct ccdigest_info *di=&ccsha256_ltc_di;
++ ccdigest_ctx_decl(CCSHA256_STATE_SIZE,CCSHA256_BLOCK_SIZE,h);
++ ccdigest_init(di,h);ccdigest_update(di,h,n,bytes);ccdigest_final(di,h,out);
++}
++static int read_file(const char *path,uint8_t **data,size_t *size) {
++ vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;struct vnode_attr va;int err,resid=0;
++ *data=NULL;*size=0;err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);if(err)return err;
++ VATTR_INIT(&va);VATTR_WANTED(&va,va_data_size);VATTR_WANTED(&va,va_uid);
++ err=vnode_getattr(vp,&va,ctx);
++ if(!err && (vnode_vtype(vp)!=VREG || va.va_uid!=0 || va.va_data_size==0 || va.va_data_size>LIMIT))err=EINVAL;
++ if(!err) {
++  *size=(size_t)va.va_data_size;*data=kalloc_data(*size,Z_WAITOK);
++  if(!*data)err=ENOMEM;
++  else err=vn_rdwr(UIO_READ,vp,(caddr_t)*data,(int)*size,0,UIO_SYSSPACE,IO_NOAUTH,
++    vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++  if(!err && resid)err=EIO;
++ }
++ (void)vnode_close(vp,FREAD,ctx);
++ if(err && *data){kfree_data(*data,*size);*data=NULL;}
++ return err;
++}
++static int hash_file(const char *path,uint8_t out[32]) {
++ uint8_t *data;size_t n;int err=read_file(path,&data,&n);
++ if(!err){digest(data,n,out);kfree_data(data,n);}return err;
++}
++static int same_file(const char *path,const uint8_t hash[32]) {
++ uint8_t got[32];int err=hash_file(path,got);return err?err:memcmp(got,hash,32)?EINVAL:0;
++}
++/* Existing staging/backup names are reused only if their full digest matches.
++ * Never truncate an existing object (including a possible hard link). */
++static int create_file(const char *path,const uint8_t *bytes,size_t n,const uint8_t expected[32]) {
++ uint8_t got[32];int err=hash_file(path,got);
++ if(!err)return memcmp(got,expected,32)?EINVAL:0;
++ if(err!=ENOENT)return err;
++ vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;int resid=0;
++ err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0755,0,&vp,ctx);if(err)return err;
++ err=vn_rdwr(UIO_WRITE,vp,(caddr_t)(uintptr_t)bytes,(int)n,0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,
++  vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++ (void)vnode_close(vp,FWRITE,ctx);if(!err && resid)err=EIO;
++ return err?err:same_file(path,expected);
++}
++static void stage_name(char *out,size_t cap,const char *path,const uint8_t hash[32],const char *kind) {
++ snprintf(out,cap,"%s.in2020-%s-%02x%02x%02x%02x%02x%02x%02x%02x",path,kind,
++  hash[0],hash[1],hash[2],hash[3],hash[4],hash[5],hash[6],hash[7]);
++}
++static int apply(DTEntry node,uint32_t mode) {
++ struct entry e[FILES];bzero(e,sizeof(e));
++ /* Validate every package hash and every active file before creating anything. */
++ for(unsigned i=0;i<FILES;++i) {
++  char key[16];const void *prop=NULL;unsigned len=0;uint8_t hash[32];
++  snprintf(key,sizeof(key),"file%u",i);
++  if(SecureDTGetProperty(node,key,&prop,&len)!=kSuccess || len<=64 || len-64>LIMIT)return EINVAL;
++  e[i].old=prop;e[i].new=e[i].old+32;e[i].data=e[i].old+64;e[i].size=len-64;
++  e[i].desired=mode?e[i].old:e[i].new;digest(e[i].data,e[i].size,hash);
++  if(memcmp(hash,e[i].desired,32))return EINVAL;
++  int err=hash_file(paths[i],hash);if(err)return err;
++  if(memcmp(hash,e[i].old,32) && memcmp(hash,e[i].new,32))return EPERM;
++  e[i].change=memcmp(hash,e[i].desired,32)!=0;
++  stage_name(e[i].stage,sizeof(e[i].stage),paths[i],e[i].desired,"stage");
++  stage_name(e[i].backup,sizeof(e[i].backup),paths[i],e[i].old,"backup");
++ }
++ for(unsigned i=0;i<FILES;++i)if(e[i].change) {
++  int err;
++  if(!mode) {
++   uint8_t *old;size_t size;err=read_file(paths[i],&old,&size);if(err)return err;
++   err=create_file(e[i].backup,old,size,e[i].old);kfree_data(old,size);if(err)return err;
++  }
++  err=create_file(e[i].stage,e[i].data,e[i].size,e[i].desired);if(err)return err;
++ }
++ for(unsigned i=0;i<FILES;++i)if(e[i].change) {
++  int err=in2020_kernel_rename(e[i].stage,paths[i]);
++  if(err) {
++   /* Restore all files already committed in this update, before any launchd. */
++   if(!mode)for(unsigned j=0;j<i;++j)if(e[j].done) {
++    uint8_t *old;size_t size;char restore[192];int back=read_file(e[j].backup,&old,&size);
++    if(!back) {
++     stage_name(restore,sizeof(restore),paths[j],e[j].old,"restore");
++     back=create_file(restore,old,size,e[j].old);kfree_data(old,size);
++     if(!back)back=in2020_kernel_rename(restore,paths[j]);
++    }
++    if(back)panic("IN2020 update rollback failed %d",back);
++   }
++   return err;
++  }
++  e[i].done=true;printf("IN2020 UPDATE: %s atomically %s\n",paths[i],mode?"restored":"updated");
++ }
++ for(unsigned i=0;i<FILES;++i){int err=same_file(paths[i],e[i].desired);if(err)return err;}
++ return 0;
++}
++void in2020_update_install(void) {
++ DTEntry node;const void *prop;unsigned len;uint32_t mode;
++ if(SecureDTLookupEntry(NULL,"/in2020-update",&node)!=kSuccess)return;
++ if(SecureDTGetProperty(node,"mode",&prop,&len)!=kSuccess || len!=4)panic("IN2020 update bad mode");
++ memcpy(&mode,prop,4);if(mode>1)panic("IN2020 update unknown mode");
++ int err=apply(node,mode);if(err)panic("IN2020 update refused before launchd: %d (repeat repair/restore boot)",err);
++ printf("IN2020 UPDATE: all six hashes verified; mode %u; userdata filesystem preserved\n",mode);
++}
++#endif
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -113,6 +113,7 @@
+ bsd/dev/sweet_usb.c			standard
+ bsd/dev/sweet_cpufreq.c		standard
+ bsd/dev/sweet_gpu.c			standard
++bsd/dev/in2020_update.c		standard
+ bsd/dev/mem.c				standard
+ bsd/dev/munge.c 			optional config_requires_u32_munging
+ bsd/dev/unix_startup.c			standard
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1098,6 +1098,10 @@
+ 
+ 	bsd_init_kprintf("bsd_do_post - done");
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	extern void in2020_update_install(void);
++	in2020_update_install();
++#endif
+ 	load_init_program(p);
+ 	lock_trace = 1;
+ }
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -9705,6 +9705,13 @@
+ 	           uap->tofd, uap->to, UIO_USERSPACE, 0);
+ }
+ 
++int in2020_kernel_rename(const char *, const char *);
++int in2020_kernel_rename(const char *from,const char *to)
++{
++	return renameat_internal(vfs_context_kernel(),AT_FDCWD,CAST_USER_ADDR_T(from),
++	    AT_FDCWD,CAST_USER_ADDR_T(to),UIO_SYSSPACE,0);
++}
++
+ /*
+  * Make a directory file.
+  *

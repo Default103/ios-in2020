@@ -67,6 +67,7 @@
  * every frame (see frame_end()).
  */
 #include <CoreFoundation/CoreFoundation.h>
+#include "surface_pixels.h"
 #include <dlfcn.h>
 #include <IOSurface/IOSurfaceRef.h>
 #include <mach/mach.h>
@@ -257,6 +258,8 @@ struct image {
 	GLuint mirror;                  /* a texture that is the surface's memory, which the GPU copies the frame into (blit_targets) */
 	bool wrapped;                   /* the surface is memory of somebody's with a surface made around it */
 	bool alpha_first;               /* its pixels are opacity, blue, green, red in memory: see my_attachImage() */
+	bool wide_xr;                   /* native w30r; CPU conversion to/from RGBA float */
+	bool half_bitmap;               /* RGBA16F target, no shared BGRA interpretation */
 	bool deep;                      /* a 'b3a8' surface, whose first plane holds the frame as blue-first bytes: see my_attachImage() */
 	bool painted;                   /* something has been drawn into it (it is a target in fact, not only in name) */
 	unsigned looked;                /* ... the frame in which that memory was last looked at, */
@@ -740,7 +743,7 @@ surface_changed(struct eagl *e, struct image *image)
 {
 	IOSurfaceRef surface = image->surface;
 	size_t size = IOSurfaceGetBytesPerRow(surface) * (size_t)(image->height - 1) +
-	    (size_t)image->width * bytes_a_pixel(image->format, image->type);
+	    (size_t)image->width * (image->wide_xr ? 4 : bytes_a_pixel(image->format, image->type));
 	const uint8_t *base = IOSurfaceGetBaseAddress(surface);
 	uint64_t sum = size, word;
 
@@ -770,7 +773,7 @@ surface_to_texture(struct eagl *e, struct image *image)
 	unsigned pixel = bytes_a_pixel(image->format, image->type);
 	GLint row_length = 0, alignment = 4;
 	uint8_t *base, *flipped = NULL;
-	bool alpha_first = image->alpha_first && !planar && pixel == 4;
+	bool alpha_first = image->alpha_first && !planar && (pixel == 4 || pixel == 8);
 
 	if (image->shared) {
 		return;
@@ -780,6 +783,27 @@ surface_to_texture(struct eagl *e, struct image *image)
 		return;
 	}
 	base = image_base(image);
+	if (image->wide_xr) {
+		size_t count = (size_t)image->width * image->height;
+		float *rgba = count <= 16777216 ? malloc(count * 4 * sizeof(float)) : NULL;
+		if (rgba != NULL) {
+			for (GLsizei y = 0; y < image->height; ++y) for (GLsizei x = 0; x < image->width; ++x) {
+				uint32_t word;
+				memcpy(&word, base + row * (size_t)(image->invert ? image->height - 1 - y : y) + x * 4, 4);
+				sweet_xr_unpack(word, rgba + ((size_t)y * image->width + x) * 4);
+			}
+			glGetIntegerv(GL_UNPACK_ROW_LENGTH, &row_length);
+			glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0); glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+			glTexImage2D(image->to, 0, 0x881a /* RGBA16F */, image->width, image->height, 0,
+			    0x1908 /* RGBA */, 0x1406 /* FLOAT */, rgba);
+			glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length); glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+			free(rgba); e->uploads++; e->upload_bytes += row * (size_t)image->height;
+		} else say("sweet-gl: w30r conversion allocation refused\n");
+		IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
+		image->seed = IOSurfaceGetSeed(surface);
+		return;
+	}
 	if ((image->invert || alpha_first) && (flipped = calloc(row, (size_t)image->height)) != NULL) {
 		for (GLsizei y = 0; y < image->height; y++) {
 			const uint8_t *from = base + row * (size_t)(image->invert ? image->height - 1 - y : y);
@@ -788,6 +812,10 @@ surface_to_texture(struct eagl *e, struct image *image)
 
 			if (!alpha_first) {
 				memcpy(to, from, used < row ? used : row);
+				continue;
+			}
+			if (pixel == 8) {
+				for (GLsizei x = 0; x < image->width; ++x) sweet_reverse_half4(to + x * 8, from + x * 8);
 				continue;
 			}
 			/* opacity, blue, green, red in memory: into the order OpenGL ES was told */
@@ -888,16 +916,36 @@ target_to_surface(struct eagl *e, struct image *image)
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, image->texture, 0);
 	if (IOSurfaceLock(surface, 0, NULL) == 0) {
 		base = image_base(image);
-		glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(row / 4));
-		glPixelStorei(GL_PACK_ALIGNMENT, 4);
-		if (!image->invert) {
-			glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, base);
-		} else {
-			for (GLsizei y = 0; y < image->height; y++) {
-				glReadPixels(0, y, image->width, 1, GL_BGRA, GL_UNSIGNED_BYTE, base + row * (size_t)(image->height - 1 - y));
+		unsigned pixel = bytes_a_pixel(image->format, image->type);
+		if (image->wide_xr) {
+			size_t count = (size_t)image->width * image->height;
+			float *rgba = count <= 16777216 ? malloc(count * 4 * sizeof(float)) : NULL;
+			if (rgba) {
+				glPixelStorei(GL_PACK_ROW_LENGTH, 0); glPixelStorei(GL_PACK_ALIGNMENT, 4);
+				glReadPixels(0, 0, image->width, image->height, 0x1908, 0x1406, rgba);
+				for (GLsizei y = 0; y < image->height; ++y) for (GLsizei x = 0; x < image->width; ++x) {
+					uint32_t word = sweet_xr_pack(rgba + ((size_t)y * image->width + x) * 4);
+					memcpy(base + row * (size_t)(image->invert ? image->height - 1 - y : y) + x * 4, &word, 4);
+				}
+				free(rgba);
 			}
+		} else if (image->half_bitmap && image->alpha_first) {
+			uint8_t *pixels = malloc((size_t)image->width * image->height * 8);
+			if (pixels) {
+				glPixelStorei(GL_PACK_ROW_LENGTH, 0); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+				glReadPixels(0, 0, image->width, image->height, GL_RGBA, 0x140b, pixels);
+				for (GLsizei y = 0; y < image->height; ++y) for (GLsizei x = 0; x < image->width; ++x)
+					sweet_reverse_half4(base + row * (size_t)(image->invert ? image->height - 1 - y : y) + x * 8,
+					    pixels + ((size_t)y * image->width + x) * 8);
+				free(pixels);
+			}
+		} else {
+			glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(row / pixel)); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			if (!image->invert) glReadPixels(0, 0, image->width, image->height, image->format, image->type, base);
+			else for (GLsizei y = 0; y < image->height; y++)
+				glReadPixels(0, y, image->width, 1, image->format, image->type, base + row * (size_t)(image->height - 1 - y));
 		}
-		glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+		glPixelStorei(GL_PACK_ROW_LENGTH, 0); glPixelStorei(GL_PACK_ALIGNMENT, 4);
 		IOSurfaceUnlock(surface, 0, NULL);
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, e->framebuffer);
@@ -4565,7 +4613,7 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	GLint texture = 0;
 	uint32_t pixels;
 	uint64_t began;
-	bool plain, deep;
+	bool plain, deep, wide_xr, half_bitmap;
 
 	(void)selector;
 	if (e == NULL || surface == NULL) {
@@ -4586,17 +4634,26 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	 * plane is the kernel's framebuffer, which takes it as 'BGRA' (xnu 0115). The opacity plane
 	 * is left alone (the screen has no use for it).
 	 */
-	deep = pixels == 'b3a8' && IOSurfaceGetPlaneCount(surface) == 2 && IOSurfaceGetBytesPerElementOfPlane(surface, 0) == 4 &&
+	deep = pixels == 'b3a8' && IOSurfaceGetPlaneCount(surface) == 2 && (IOSurfaceGetBytesPerElementOfPlane(surface, 0) == 4 || IOSurfaceGetBytesPerElementOfPlane(surface, 0) == 1) &&
 	    IOSurfaceGetWidthOfPlane(surface, 0) >= IOSurfaceGetWidth(surface) &&
 	    IOSurfaceGetHeightOfPlane(surface, 0) >= IOSurfaceGetHeight(surface) &&
 	    IOSurfaceGetBaseAddressOfPlane(surface, 0) == IOSurfaceGetBaseAddress(surface) &&
 	    IOSurfaceGetWidth(surface) > 0 && IOSurfaceGetHeight(surface) > 0 &&
 	    IOSurfaceGetBytesPerRow(surface) >= IOSurfaceGetWidth(surface) * 4 &&
 	    IOSurfaceGetHeight(surface) <= IOSurfaceGetAllocSize(surface) / IOSurfaceGetBytesPerRow(surface);
+	wide_xr = pixels == 'w30r' && IOSurfaceGetPlaneCount(surface) == 0 && IOSurfaceGetBytesPerElement(surface) == 4;
+	half_bitmap = (pixels == 0 || pixels == 'RGhA') && IOSurfaceGetPlaneCount(surface) == 0 && IOSurfaceGetBytesPerElement(surface) == 8;
+	if (wide_xr || half_bitmap) {
+		size_t row = IOSurfaceGetBytesPerRow(surface), width = IOSurfaceGetWidth(surface), height = IOSurfaceGetHeight(surface);
+		unsigned storage = half_bitmap ? 8 : 4;
+		bool valid = width > 0 && height > 0 && width <= 4096 && height <= 4096 && row >= width * storage &&
+		    height <= IOSurfaceGetAllocSize(surface) / row;
+		wide_xr &= valid; half_bitmap &= valid;
+	}
 	if (IOSurfaceGetPlaneCount(surface) > 0 && attached < 4) {
 		say_planes(surface);
 	}
-	if (target != GL_TEXTURE_2D || texture == 0 || !(plain || deep) ||
+	if (target != GL_TEXTURE_2D || texture == 0 || !(plain || deep || wide_xr || half_bitmap) ||
 	    (image = image_new(e, (GLuint)texture, surface)) == NULL) {
 		say("sweet-gl: -attachImage: target %#lx, texture %d, IOSurface %u '%.4s' %zux%zu row %zu alloc %zu: not done\n", target, texture,
 		    IOSurfaceGetID(surface), (const char *)&(uint32_t){ __builtin_bswap32(pixels) }, IOSurfaceGetWidth(surface),
@@ -4606,12 +4663,20 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	}
 	image->target = true;
 	image->deep = deep;
+	image->wide_xr = wide_xr;
+	image->half_bitmap = half_bitmap;
 	image->to = GL_TEXTURE_2D;
 	image->invert = inverted;
 	image->width = (GLsizei)IOSurfaceGetWidth(surface);
 	image->height = (GLsizei)IOSurfaceGetHeight(surface);
 	image->internal = image->format = GL_BGRA;
 	image->type = GL_UNSIGNED_BYTE;
+	if (wide_xr || half_bitmap) {
+		image->internal = 0x881a; /* RGBA16F, not BGRA8 masquerading as HDR */
+		image->format = GL_RGBA;
+		image->type = wide_xr ? 0x1406 : 0x140b;
+	}
+
 	/*
 	 * A surface with no pixel format is memory CoreAnimation has made a surface around: a
 	 * picture to be shown, as an application has drawn it. Those that come this way are mostly
@@ -4643,6 +4708,73 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	}
 	eagl_leave(e, 0x970);
 	return YES;
+}
+
+/* Runs the actual attachment, upload and output paths in an isolated test context. */
+static void surface_test_number(CFMutableDictionaryRef d,CFStringRef key,int value)
+{
+ CFNumberRef n=CFNumberCreate(NULL,kCFNumberIntType,&value);CFDictionarySetValue(d,key,n);CFRelease(n);
+}
+int sweet_gl_test_surface_targets(void)
+{
+ if(strcmp(getprogname(),"sweet-gl-test"))return 0;
+ id object=((id(*)(id,SEL))objc_msgSend)((id)objc_getClass("NSObject"),sel_registerName("new"));
+ if(!my_initWithAPI(object,NULL,3,nil)){((void(*)(id,SEL))objc_msgSend)(object,sel_registerName("release"));return 0;}
+ struct eagl *e=context_of(object);int all=1;
+ for(unsigned kind=0;kind<4;++kind) {
+  CFMutableDictionaryRef props=CFDictionaryCreateMutable(NULL,0,&kCFTypeDictionaryKeyCallBacks,&kCFTypeDictionaryValueCallBacks);
+  unsigned bpe=kind>=2?8:4;uint32_t fmt=kind==0?'b3a8':kind==1?'w30r':kind==3?'RGhA':0;
+  surface_test_number(props,CFSTR("IOSurfaceWidth"),8);surface_test_number(props,CFSTR("IOSurfaceHeight"),8);
+  surface_test_number(props,CFSTR("IOSurfaceBytesPerRow"),64);surface_test_number(props,CFSTR("IOSurfaceBytesPerElement"),bpe);
+  surface_test_number(props,CFSTR("IOSurfacePixelFormat"),(int)fmt);surface_test_number(props,CFSTR("IOSurfaceAllocSize"),16384);
+  if(kind==0){
+   CFMutableDictionaryRef planes[2];
+   for(unsigned i=0;i<2;++i){
+    planes[i]=CFDictionaryCreateMutable(NULL,0,&kCFTypeDictionaryKeyCallBacks,&kCFTypeDictionaryValueCallBacks);
+    surface_test_number(planes[i],CFSTR("IOSurfacePlaneWidth"),8);surface_test_number(planes[i],CFSTR("IOSurfacePlaneHeight"),8);
+    /* Explicit 1 models the application's metadata that v2 refused. */
+    surface_test_number(planes[i],CFSTR("IOSurfacePlaneBytesPerElement"),1);
+    surface_test_number(planes[i],CFSTR("IOSurfacePlaneBytesPerRow"),64);
+    surface_test_number(planes[i],CFSTR("IOSurfacePlaneOffset"),i?4096:0);
+    surface_test_number(planes[i],CFSTR("IOSurfacePlaneSize"),4096);
+   }
+   const void *v[2]={planes[0],planes[1]};CFArrayRef arr=CFArrayCreate(NULL,v,2,&kCFTypeArrayCallBacks);
+   CFDictionarySetValue(props,CFSTR("IOSurfacePlaneInfo"),arr);CFRelease(arr);CFRelease(planes[0]);CFRelease(planes[1]);
+  }
+  IOSurfaceRef surface=IOSurfaceCreate(props);CFRelease(props);GLuint tex=0,fb=0;int good=0;
+  if(surface){
+   glGenTextures(1,&tex);glBindTexture(GL_TEXTURE_2D,tex);
+   if(my_attachImage(object,NULL,GL_TEXTURE_2D,surface,NO)){
+    glGenFramebuffers(1,&fb);glBindFramebuffer(GL_FRAMEBUFFER,fb);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,tex,0);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE){
+     glViewport(0,0,8,8);glClearColor(.25,.5,.75,1);glClear(GL_COLOR_BUFFER_BIT);glFinish();
+     struct image *image=image_of(e,tex);image->drawn=true;target_to_surface(e,image);glFinish();
+     if(glGetError()==0 && IOSurfaceLock(surface,kIOSurfaceLockReadOnly,NULL)==0){
+      uint8_t *base=IOSurfaceGetBaseAddress(surface);good=1;
+      for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x){
+       uint8_t *v=base+y*64+x*bpe;
+       if(kind==0){if(v[0]<189||v[0]>193||v[1]<126||v[1]>130||v[2]<62||v[2]>66||v[3]!=255)good=0;}
+       else if(kind==1){uint32_t word;float rgba[4];memcpy(&word,v,4);sweet_xr_unpack(word,rgba);
+        if(fabsf(rgba[0]-.25f)>.003f||fabsf(rgba[1]-.5f)>.003f||fabsf(rgba[2]-.75f)>.003f)good=0;}
+       else {uint16_t expected[4]={0x3400,0x3800,0x3a00,0x3c00};uint8_t actual[8];
+        if(kind==2)sweet_reverse_half4(actual,v);else memcpy(actual,v,8);
+        if(memcmp(actual,expected,8))good=0;}
+      }
+      IOSurfaceUnlock(surface,kIOSurfaceLockReadOnly,NULL);
+     }
+    }
+   }
+   glBindFramebuffer(GL_FRAMEBUFFER,0);if(fb)glDeleteFramebuffers(1,&fb);
+   if(tex){image_forget(e,tex);glDeleteTextures(1,&tex);}CFRelease(surface);
+  }
+  say("sweet-format-test: target %u (%s): %s\n",kind,kind==0?"b3a8 element1":kind==1?"w30r":kind==2?"wrapped half":"RGBA half",good?"PASSED":"FAILED");
+  all &= good;
+ }
+ for(unsigned i=0;i<8;++i)if(contexts[i]==e)contexts[i]=NULL;
+ sweet_gl_destroy(e->gl);free(e);current=NULL;
+ ((void(*)(id,SEL))objc_msgSend)(object,sel_registerName("release"));
+ return all;
 }
 
 static void

@@ -20,6 +20,8 @@ static preprocessor_fn original_preprocessor;
 static _Thread_local int logging_exception;
 static unsigned exceptions_seen, setup_skips;
 extern void sweet_install_poster_preview(void);
+extern void sweet_install_ui_support(const char *name);
+extern void sweet_install_log(void);
 
 static void
 setup_once(id self, SEL command)
@@ -66,7 +68,10 @@ install_compatibility(void)
     char bootargs[1024] = {0}; size_t size = sizeof(bootargs)-1;
     (void)sysctlbyname("kern.bootargs", bootargs, &size, NULL, 0);
     if (strstr(bootargs, "sweetcompat=0")) return;
-    if (!name || (strcmp(name,"PosterBoard") && strcmp(name,"assetsd"))) return;
+    if (!name || (strcmp(name,"PosterBoard") && strcmp(name,"assetsd") && strcmp(name,"SpringBoard") &&
+        strcmp(name,"Maps") && strcmp(name,"FaceTime"))) return;
+    sweet_install_ui_support(name);
+    if (strcmp(name,"assetsd")) sweet_install_log();
     set_preprocessor_fn set = (set_preprocessor_fn)dlsym(RTLD_DEFAULT, "objc_setExceptionPreprocessor");
     if (set) {
         original_preprocessor = set(record_exception);

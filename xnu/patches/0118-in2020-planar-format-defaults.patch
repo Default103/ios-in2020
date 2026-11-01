@@ -1,0 +1,13 @@
+--- a/iokit/Kernel/arm/SweetSurface.cpp
++++ b/iokit/Kernel/arm/SweetSurface.cpp
+@@ -325,7 +325,9 @@
+ 			}
+ 			p->width = sweet_dict_u32(pd, "IOSurfacePlaneWidth", s->width);
+ 			p->height = sweet_dict_u32(pd, "IOSurfacePlaneHeight", s->height);
+-			p->bytesPerElement = (uint16_t)sweet_dict_u32(pd, "IOSurfacePlaneBytesPerElement", 1);
++			/* b3a8 plane0 is a 32-bit RGB word even when this key is omitted. */
++			uint32_t defaultBPE = s->pixelFormat == 0x62336138 && planes->getCount() == 2 && i == 0 ? 4 : 1;
++			p->bytesPerElement = (uint16_t)sweet_dict_u32(pd, "IOSurfacePlaneBytesPerElement", defaultBPE);
+ 			p->elementWidth = (uint8_t)sweet_dict_u32(pd, "IOSurfacePlaneElementWidth", 1);
+ 			p->elementHeight = (uint8_t)sweet_dict_u32(pd, "IOSurfacePlaneElementHeight", 1);
+ 			if (p->width > SWEET_SURFACE_MAX_DIM || p->height > SWEET_SURFACE_MAX_DIM ||

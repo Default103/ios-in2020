@@ -373,5 +373,9 @@ main(int argc, char **argv)
 	    ok ? "MESA DRAWS WITH THE GPU" : gpu ? "FAILED (wrong pixels)" : "FAILED (software, not the GPU)");
 	ok = surface_blit_test() && ok;
 	OSMesaDestroyContext(context);
-	return ok ? 0 : 1;
+	void *bridge = dlopen("/usr/local/lib/libsweet-gl.dylib", RTLD_NOW);
+	int (*test_targets)(void) = bridge ? (int (*)(void))dlsym(bridge,"sweet_gl_test_surface_targets") : NULL;
+	int targets = test_targets ? test_targets() : 0;
+	printf("sweet-gl-test: actual bridge target formats: %s\n",targets?"PASSED":"FAILED");
+	return ok && targets ? 0 : 1;
 }
