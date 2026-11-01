@@ -76,7 +76,8 @@ jobs:
             -o build-ca/sweet_poster_preview.o
           xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
             -O2 -Wall -Wextra -Werror -dynamiclib -install_name /usr/local/lib/libsweet-compat.dylib \
-            -framework CoreFoundation -framework UIKit -framework QuartzCore -framework Metal -lobjc \
+            -framework CoreFoundation -framework Foundation -framework CoreGraphics \
+            -framework UIKit -framework QuartzCore -framework Metal -lobjc \
             -o out/lib/libsweet-compat.dylib userland/compat/sweet_compat.c build-ca/sweet_poster_preview.o
           codesign -s - -f out/lib/libsweet-compat.dylib
       - name: Verify packaged dynamic dependencies and signatures
