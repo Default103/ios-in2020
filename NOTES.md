@@ -1,3 +1,9 @@
+## 2026-11-01 boot regression: verified embedded cmdline correction
+
+User reports new fb60 stalls on progress bar after Apple logo. Unpacking actual images reveals saved touch-working (54d1e4ea...) has NEITHER cpus=1 NOR sweetfb_hz, contrary to the old report. Old gpu-test and new fb60 have both. Loader and kernel segments identical; ADT differs only random-seed. Thus previous test changed two parameters; not valid one-variable evidence. ADT still one CPU, so absence of cpus=1 does not establish SMP.
+
+Builder default now omits cpus=1. New direct baseline mutation adds ONLY sweetfb_hz=60 within payload cmdline; all bytes outside 608-byte field identical, including ADT seed. Image: M:/ios-in2020/builds/xnu-41234547701/in2020-baseline-fb60-20261101/in2020-ios16-baseline-fb60-boot.img; SHA256 68f5670249d4c4333e93dce6be3b029548f819affdfeb3f2f45235cc5d5a85fd. NOT PHONE TESTED. fastboot devices empty. Next: recheck original touch-working can boot, then this isolated 60 Hz image. No flash/userdata changes.
+
 ## 2026-11-01 FPS follow-up (supersedes instrumentation claims below)
 
 Commit 3586534 fixes 0115 declaration order, interval copy rate, ms units and requested-frequency label; removes inaccurate sampled fence latency. Hunk check and actual application to post-0114 sources pass; full compilation pending. AO advancing alone does not prove command execution. No cumulative IRQ/HFI evidence yet.
