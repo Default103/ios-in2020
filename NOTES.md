@@ -1,3 +1,7 @@
+## 2026-11-01 eight-core temporary boot ACCEPTED
+
+User returned to Fastboot. Verified kona/unlocked/slot a and eight-core image SHA256; fastboot boot cpus8/fb60 image Sending/Booting OKAY, total 0.512s. No partition flash. AWAIT PHONE OBSERVATION; actual eight online CPUs and FPS unverified. Image/report paths and hashes in entry below; supersedes its waiting-for-fastboot status.
+
 ## 2026-11-01 eight-CPU / 60-Hz image ready, waiting for Fastboot
 
 User requests 8 CPUs. Builder now supports --cpus 2 or 8; generated baseline-derived eight-node ADT, MPIDR 0x000..0x700 all verified against captured IN2020 FDT/PSCI, globally unique phandles. Original nodes/firmware/seed, kernel segments and loader unchanged. cpus=8 sweetfb_hz=60, homogeneous SWEET topology retained (no heterogeneous scheduler/capacity adaptation). No kernel recompile. 2-core screen result not yet reported.
