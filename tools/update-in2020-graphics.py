@@ -14,7 +14,7 @@ root=Path('/mnt/in2020-root-supplement')
 assert os.geteuid()==0
 assert subprocess.check_output(['findmnt','-n','-o','SOURCE,FSTYPE','--target',str(root)],text=True).split()==['/dev/vdb','hfsplus']
 assert plistlib.loads((root/'System/Library/CoreServices/SystemVersion.plist').read_bytes())['ProductBuildVersion']=='20H392'
-source=a.payload.resolve();assert source==Path('/home/builder/in2020/gpu-v2-files')
+source=a.payload.resolve();assert source in (Path('/home/builder/in2020/gpu-v2-files'), Path('/home/builder/in2020/gpu-v3-files'))
 old=json.loads(a.previous_manifest.read_text());expected={}
 for line in (source/'SHA256SUMS').read_text().splitlines():
  digest,name=line.split(maxsplit=1);src=(source/name).resolve();assert source in src.parents
