@@ -7,6 +7,11 @@ name: in2020-userland
 #   SHA256SUMS; no audio/Bluetooth/system patching libraries
 on:
   workflow_dispatch:
+  push:
+    branches: [in2020-current]
+    paths:
+      - "userland/**"
+      - ".github/workflows/in2020-userland.yml"
 
 permissions:
   contents: read
