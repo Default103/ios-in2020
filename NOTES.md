@@ -1,3 +1,9 @@
+## 2026-11-01 restore confirmed UI success; 2-CPU / 60-Hz test boot accepted
+
+User confirms original baseline boots normally after root restore. User requested increased CPUs with 60 Hz. Created baseline-derived image using existing compiled PSCI SMP kernel: appended cpu1 node (MPIDR 0x100 verified against device FDT, unique phandle), appended cpus=2 sweetfb_hz=60. All existing ADT nodes/seed/firmware unchanged, kernel segments and loader byte-identical. No kernel recompile required. Existing one-node ADT would not enable SMP by cmdline alone.
+
+Image M:/ios-in2020/builds/xnu-41234547701/in2020-cpus2-fb60-20261101/in2020-ios16-cpus2-fb60-boot.img; SHA256 c5d243d240b7cee95916af2fe973b2ab2b6b423959c8d6ef120347bfd49b2934. fastboot boot Sending/Booting OKAY (0.512s), no flash/userdata write. AWAIT PHONE SCREEN. Actual CPU online count/FPS not measured; no dual-core QEMU test. Full report M:/ios-in2020/reports/IN2020-cpus2-fb60-20261101.md; reusable builder scripts/build-in2020-smp-test.py --out NEW_DIR. If failed: return to original temporary baseline, collect CPU/SGI evidence before more CPUs.
+
 ## 2026-11-01 user-requested TWRP iOS restore completed
 
 User asked to reflash iOS after progress-bar stall. Temporarily booted verified TWRP, backed up current first 16 GiB and tail log (M:/ios-in2020/backups/ios-reflash-20261101). Current HFSX lacks clean-unmount bit, not proof of corruption; no SWEETLOG header. Backup SHA256 ecacfd10aea894398c58b3f3e4fab3b8ad12036a5ba5dc363e40b17187d1c0fe.
