@@ -1,3 +1,9 @@
+## 2026-11-01 user-requested TWRP iOS restore completed
+
+User asked to reflash iOS after progress-bar stall. Temporarily booted verified TWRP, backed up current first 16 GiB and tail log (M:/ios-in2020/backups/ios-reflash-20261101). Current HFSX lacks clean-unmount bit, not proof of corruption; no SWEETLOG header. Backup SHA256 ecacfd10aea894398c58b3f3e4fab3b8ad12036a5ba5dc363e40b17187d1c0fe.
+
+Restored original 16 GiB root via 64 x 256 MiB recovery chunks, full DEVICE READBACK SHA256 matches source f3fdc5e206b4c8336415fa9bcbaed8e0d3b33c3efed33881bf82afab4eebb4ba. First stdin attempt broke after 1337 bytes; subsequent complete chunk restore and hash verification cover it. No boot/recovery/bootloader/modem/persist flashing or userdata format. TWRP auto-mounted metadata rw. Rebooted bootloader and fastboot boot original touch-working 54d1e4ea..., Sending/Booting OKAY (0.511s). AWAIT PHONE OBSERVATION, not confirmed UI recovery. Full report M:/ios-in2020/reports/IN2020-twrp-ios-restore-20261101.md. Next: user reports screen; avoid repeat flash if still stuck; obtain diagnostics.
+
 ## 2026-11-01 QEMU baseline smoke test completed
 
 PASS_EXPECTED_MISSING_UFS: saved touch-working payload (54d1e4ea...), same 89015dc kernel, adapted GIC/timer to QEMU virt and disabled unsupported touch/GPU/cpufreq and storage writes. QEMU 11.1.0 / A76 / 1 CPU / 8 GiB, 60s observation: expected IOFindBSDRoot ufsroot0 unavailable: 6; unknown glyphs 0. No iOS userland/GPU/phone C shim validation. Does not resolve phone progress-bar stall. First two attempts blocked by sandbox TCP; third allowed local QMP succeeded. Outputs: M:/ios-in2020/builds/xnu-41234547701/qemu-baseline-20261101-run3. Reusable script: M:/ios-in2020/scripts/test-in2020-baseline-qemu.py --out NEW_DIR. Full report: M:/ios-in2020/reports/IN2020-qemu-baseline-20261101.md. No phone/partition changes.
