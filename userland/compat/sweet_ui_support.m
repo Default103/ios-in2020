@@ -76,9 +76,19 @@ static void wallpaper_recover(void)
         method_getArgumentType(method, 3, second, sizeof(second));
         method_getArgumentType(method, 4, locations, sizeof(locations));
     }
-    if (!method || method_getNumberOfArguments(method) != 5 || result[0] != 'v' ||
-        first[0] != '@' || second[0] != '@' || (locations[0] != 'Q' && locations[0] != 'q')) {
+    if (!method || method_getNumberOfArguments(method) != 5 || result[0] != 'B' ||
+        first[0] != '@' || second[0] != '@' || locations[0] != '@') {
         fprintf(stderr, "sweet-ui: wallpaper service ABI mismatch; no request\n");
+        return;
+    }
+    /* Verified in the original 20H392 PaperBoardUI: locations is a string,
+     * converted by containsString:("lock") / containsString:("home"). */
+    void *paper = dlopen("/System/Library/PrivateFrameworks/PaperBoardUI.framework/PaperBoardUI", RTLD_NOW);
+    NSString *(*locationString)(NSInteger) = paper ? dlsym(paper, "PBUIStringForWallpaperLocations") : NULL;
+    NSInteger (*locationFlags)(NSString *) = paper ? dlsym(paper, "PBUIWallpaperLocationsForString") : NULL;
+    NSString *targetLocations = locationString ? locationString(3) : nil;
+    if (!locationFlags || ![targetLocations isKindOfClass:NSString.class] || locationFlags(targetLocations) != 3) {
+        fprintf(stderr, "sweet-ui: wallpaper native location conversion unavailable; no request\n");
         return;
     }
     UIColor *(^color)(unsigned long long) = ^UIColor *(unsigned long long n) {
@@ -86,9 +96,20 @@ static void wallpaper_recover(void)
             blue:(n & 255) / 255.0 alpha:1];
     };
     @try {
-        ((void (*)(id, SEL, id, id, NSUInteger))objc_msgSend)(cls, selector, color(rgb), color(rgb), 3);
+        BOOL accepted = ((BOOL (*)(id, SEL, id, id, id))objc_msgSend)(cls, selector,
+            color(rgb), color(rgb), targetLocations);
+        fprintf(stderr, "sweet-ui: native static wallpaper color response: accepted=%d locations=%s color=%s\n",
+            accepted, targetLocations.UTF8String, hex.UTF8String);
+        if (!accepted) {
+            static unsigned retries;
+            if (++retries < 3)
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                    wallpaper_recover();
+                });
+            return;
+        }
         NSDictionary *record = @{@"resource": @365, @"color": hex, @"darkColor": hex,
-            @"requested": @YES, @"visuallyVerified": @NO};
+            @"requested": @YES, @"accepted": @YES, @"locations": targetLocations, @"visuallyVerified": @NO};
         NSData *recordData = [NSPropertyListSerialization dataWithPropertyList:record
             format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
         BOOL recorded = [recordData writeToFile:marker options:NSDataWritingAtomic error:NULL];
