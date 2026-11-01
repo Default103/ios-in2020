@@ -33,7 +33,8 @@ static void install_standard_snapshots(void)
 {
     /* The current display backend is BGRA8 and has no native Metal device.
      * UIKit snapshots should not demand unsupported HDR backing formats. */
-    if (MTLCreateSystemDefaultDevice()) return;
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device && [device newCommandQueue]) return;
     Class cls = UIGraphicsImageRendererFormat.class;
     Method range = class_getInstanceMethod(cls, @selector(setPreferredRange:));
     Method def = class_getClassMethod(cls, @selector(defaultFormat));
@@ -43,8 +44,11 @@ static void install_standard_snapshots(void)
     default_format = (id (*)(id, SEL))method_getImplementation(def);
     preferred_format = (id (*)(id, SEL))method_getImplementation(pref);
     method_setImplementation(range, (IMP)standard_range);
-    method_setImplementation(def, (IMP)standard_default);
-    method_setImplementation(pref, (IMP)standard_preferred);
+    Class meta = object_getClass(cls);
+    if (!class_addMethod(meta, @selector(defaultFormat), (IMP)standard_default, method_getTypeEncoding(def)))
+        method_setImplementation(def, (IMP)standard_default);
+    if (!class_addMethod(meta, @selector(preferredFormat), (IMP)standard_preferred, method_getTypeEncoding(pref)))
+        method_setImplementation(pref, (IMP)standard_preferred);
     fprintf(stderr, "sweet-ui: standard-range UIKit snapshots enabled for BGRA8 backend\n");
 }
 
