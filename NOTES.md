@@ -1,3 +1,26 @@
+## 2026-11-01 v3 FINAL HANDOFF: boot accepted; offline recovery complete; device visuals pending
+
+
+## Offline recovery root complete
+
+Independent clean-v2-derived recovery root (not a backup of current phone user data): M:/ios-in2020/builds/ios16-root-20H392-in2020-surface-wallpaper-20261101. Raw16GiB SHA cbb1f2d85aa750128a0997bc051b8da5fe279ae65b8c00bdde87b79d8296a864; sparse12349747928bytes SHA6cf520658658eebd8a86aef46d969085b4b629e0319ba98e4577f7881ba3971e. HFS checks and readonly sixhash/32apps/3840files/wallpaper/twojobs checks PASS. Independent sparse expansion SHA/CRC PASS, DONT_CARE0. VM shut down; raw/sparse frozen readonly. Neither image flashed. For the phone use the already-accepted in-place repair boot; only device log can confirm update execution.
+
+All authorized build/package/temporary boot work completed. Final user observation/new capture is required to evaluate runtime fixes. No further phone action taken after BootingOKAY. Repository source/config/docs only pushed; firmware, cache, backups, generated boot/root binaries and raw device logs remain local.
+
+## 2026-11-01 v3 REPAIR TEMPORARY BOOT ACCEPTED; visual/runtime update result pending
+
+User authorization carried out directly: uniqueFastboot/kona checked,805306368downloadlimit, exactf8e21...imageSHA rechecked, fastboot boot returnedSendingOKAY/BootingOKAY in0.866sec. NO partition flash. This confirms bootloader acceptance ONLY; six-file kernel updater execution and desktop/wallpaper/Maps/FaceTime results need new device log/user observation. Do NOT claim visual recovery or actual on-device transaction success.
+
+Final kernel41356057002 SUCCESS SHA06e9b870bd15099f3cf908c0f29b4dddef2695b3ff0ddc8736d46c49a76ee0ec. Final userland41358065214 SUCCESS source954ca1688c0409e3a5101cfc955e61389995fcdb; all six plainarm64 MachO/downloadSHA, CIstrictcodesign/dependencies PASS. Intelstandardpool started immediately after ARMqueue; canceled unused queues41356725292/41358056499. Both selected source hashes recorded pervariant.
+
+Official boots M:/ios-in2020/builds/xnu-41356057002/in2020-surface-wallpaper-tests/: v3-repair SHA f8e21bbb989bb8d9fb088be3a41020f02e5bc2e5fba527965266da45c3837dc3,34308096bytes,599bytecmd; v3-check SHA3202691b2da7a54b2406e3413e7bea0e7ea8419e5d7b0356c888c03e1274798e,543bytecmd; v3-restore-libs SHAc297e90a5033a1cbdb4142c859a2549e452fe333dbb6538f2c2e1f0533536020,561bytecmd. All largeADT/header/loaderbaseline/bodybounds passed; metadata/frozenbinaries retained. Repairmodeupdates6fixedlibraries/tests with knownold/newhashes and backup; restorecarriesoldv2bytes. Currentuserdata/preferences preserved; nativewallcolor preference intentionally persists after libraryrestore. NOOP hostpackaging is NOT PHONE IMAGE.
+
+Local offline v3root recovery copy is being updated in isolatedVM; neverflashautomatically. See docs/IN2020-surface-wallpaper-repair-20261101.md and externalChinese report for details. Next: devicewait60secafterSB, wallpaper/blur/Maps/FaceTime observations; newTWRP readonlycapture logs/perf-phone-graphics-v3-ca-20261101. NeedIN2020UPDATE allsixverified +fourtargettestpasses +UIKitlaunch/window/wallrequest evidence, apporiginalerrors. Renderer/nativewallrequestsuccess !=actualvisualsuccess. No additional phone command after successful boot.
+
+## 2026-11-01 final userland moved to active standard Intel runner
+
+ARM run41356725292 remained unassigned ~15min. Added workflow runner choice macos-15/macos-15-intel and separate concurrency groups; no graphics-source change. Intel CI41358065214 source954ca1688c0409e3a5101cfc955e61389995fcdb acquired runner immediately, selected Xcode and compiled GPUtest, now Mesa compiling. Canceled duplicate queued41358056499 and original41356725292 to avoid wasted builds. Final userland reference MUST use41358065214 if successful, not the earlier queued ID. Kernel41356057002 downloaded: SHA06e9b870bd15099f3cf908c0f29b4dddef2695b3ff0ddc8736d46c49a76ee0ec,17349640bytes, plainarm64/header and SHA256SUMS passed. Read-only phonecheck still1Fastboot/kona,max-download-size805306368. No boot sent yet. NOOP packaging (~34MB boot,15.9MBADT,54.6MBkernel+ADTtop within3GB RAM) is host-test-only; never boot it.
+
 ## 2026-11-01 v3 transaction regressions PASS; final kernel SUCCESS; userland queued
 
 Final kernel CI41356057002 SUCCESS, source54613d079696c85311c7c089d5c17c9eb9991ef7. Final userland CI41356725292 sourcec13194cb1bce64f5c1bf3137e0263a0f33230416 still QUEUED; do not deploy older or failed builds. Earlier userland41354854944 failed because mach/mach_vm.h unavailable; corrected by89f20c4; later source supersedes old queued runs. Kernel41354873242 earlier passed the full updater code too. Final difference preserves ENOENT for unsupported extension query ABI.
