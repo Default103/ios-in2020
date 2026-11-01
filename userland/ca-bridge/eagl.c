@@ -681,6 +681,25 @@ surface_mirrored(struct eagl *e, struct image *image)
 		image->mirror = 0;
 		return false;
 	}
+	/* An imported texture must also be a complete render target, not just
+	 * a successful EGL-image import. Otherwise retain the CPU fallback. */
+	GLint saved_draw = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw);
+	if (e->writer == 0) glGenFramebuffers(1, &e->writer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, e->writer);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, image->mirror, 0);
+	GLenum complete = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+	if (complete != GL_FRAMEBUFFER_COMPLETE)
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)saved_draw);
+	if (complete != GL_FRAMEBUFFER_COMPLETE) {
+		say("sweet-gl: IOSurface %u GPU blit target incomplete %#x; using copy fallback\n",
+		    IOSurfaceGetID(surface), complete);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
+		glDeleteTextures(1, &image->mirror);
+		image->mirror = 0;
+		return false;
+	}
 	glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
 	e->shared++;
 	return true;
