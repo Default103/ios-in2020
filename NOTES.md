@@ -1,5 +1,7 @@
 ## 2026-11-01 graphics repair built; independent root + manual staged test
 
+Final packaging PASS: raw and sparse read-only; independent RAW/FILL expansion SHA256 and CRC verified, DONT_CARE=0. Sparse SHA256 50f6d28bc2d1b35f794d39cd53c15845184eded922a7c803f4f1483a435e7605, 12349747928 bytes. Both boot metadata files bind this exact root hash. Installer + manual guide pushed as 5b3d88b; no phone test performed.
+
 User explicitly approved this graphics repair and necessary related code/workflow pushes and cloud builds to Default103/ios-in2020 in2020-current. Phone actions remain MANUAL ONLY: no adb/fastboot/reboot/log pulls were performed during this repair. No firmware/cache/backups uploaded.
 
 Kernel CI 41329071725 SUCCESS (4669fc8c2b781dd209924b00edc17bdaadebc129), kernel SHA256 5292ace8f54b525949d031d955cae66f9eb1b610f97c5dca9189cebc746f18e9. Userland CI 41329886029 SUCCESS (84baaf27eafaae8ed4d463058ff525ba271e7c20), arm64/codesign/dependency checks passed; all six downloaded artifact hashes verified locally. Four libraries: OSMesa/Freedreno, sweet-gl, sweet-ca, sweet-compat; plus two real GPU tests. Exact kernel injection parser and duplicate setup guard C tests passed in isolated host VM.
