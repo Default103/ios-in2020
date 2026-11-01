@@ -1,3 +1,7 @@
+## 2026-11-01 QEMU baseline smoke test completed
+
+PASS_EXPECTED_MISSING_UFS: saved touch-working payload (54d1e4ea...), same 89015dc kernel, adapted GIC/timer to QEMU virt and disabled unsupported touch/GPU/cpufreq and storage writes. QEMU 11.1.0 / A76 / 1 CPU / 8 GiB, 60s observation: expected IOFindBSDRoot ufsroot0 unavailable: 6; unknown glyphs 0. No iOS userland/GPU/phone C shim validation. Does not resolve phone progress-bar stall. First two attempts blocked by sandbox TCP; third allowed local QMP succeeded. Outputs: M:/ios-in2020/builds/xnu-41234547701/qemu-baseline-20261101-run3. Reusable script: M:/ios-in2020/scripts/test-in2020-baseline-qemu.py --out NEW_DIR. Full report: M:/ios-in2020/reports/IN2020-qemu-baseline-20261101.md. No phone/partition changes.
+
 ## 2026-11-01 boot regression: verified embedded cmdline correction
 
 User reports new fb60 stalls on progress bar after Apple logo. Unpacking actual images reveals saved touch-working (54d1e4ea...) has NEITHER cpus=1 NOR sweetfb_hz, contrary to the old report. Old gpu-test and new fb60 have both. Loader and kernel segments identical; ADT differs only random-seed. Thus previous test changed two parameters; not valid one-variable evidence. ADT still one CPU, so absence of cpus=1 does not establish SMP.
