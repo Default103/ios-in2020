@@ -75,7 +75,7 @@
 +		return error;
 +	}
 +	/* Only the verified pid-based ABI here; never treat an audit-token pointer as a pid. */
-+	if (a.by_token != 0 || a.pid == 0 || a.pid > 0x7fffffff || a.buf == 0) return EINVAL;
++	if (a.by_token != 0 || a.pid == 0 || a.pid > 0x7fffffff || a.buf == 0) return ENOENT;
 +	target = proc_find((int)a.pid);
 +	if (target == NULL) {
 +		return ESRCH;
