@@ -1,3 +1,23 @@
+## 2026-11-02 v4 wallpaper/120softwareHz BOOT ACCEPTED; runtime result pending
+
+USER asked collectcompletedCI/buildboot/directboot. CI41360566477 kernel f185e87ce3fedfe0fa6a72df4043271116a28782 SUCCESS SHA92c6d779711128a77b73bdf0271d3c13b11f1918d4cf1df7a077adcc77104e3a; userland41360639350 a0f66869d26c78e9abc1a9710d88668290fd6099 SUCCESS. All6downloadSHA/arm64, CIcodesign/deps passed. Generalizedbuilder verifiesoldv3artifact41358065214 againstfrozenv3manifest, constructs4fixedhashupdateboots. No fullrootflashneeded.
+
+M:/ios-in2020/builds/xnu-41360566477/in2020-wallpaper-120hz-tests: v4-repair SHA6a3ce0eb3ee761b75af149804370feff03e9daa8385e7d7ec6d1df4045860142,34308096bytes,600bytecmd,8CPU/sweetfb_hz120/sweetwall1. v4-repair-fb60 SHAee45f7923b24eb381ee7aee724c9f6c0b9f11e654f95522752ed1a147db7b72e,599cmd; payloadidenticalexceptcommand. v4-check SHAa57f18c047602f8ab78b67cc9af4e85606a959423df3955277ddf8e86794943e; v4-restore-libs SHA133f2c22a5b7c414354ae210c8ae8c31c140c24d125144fa2e6aaa743e175386 (oldv3libs+60softwareHz). Allcommands<608,header/ADTgrowth/memorylimits/hash checked; frozenreadonly. Restoredoesnotclearwallpaperpreference.
+
+UniqueFastbootkona/size/hashchecked; directfastbootbootv4-repair acceptedSendingOKAY+BootingOKAY0.863sec. Nopartitionflash. Runtimeupdaterexecution/nativewallpaperBOOL/desktop/visualresults notyetconfirmed; don'tclaimphysical120Hz. Newpatchrequests8333usSOFTWAREvsync; physicalDSImodeUNCHANGED/inherited. AlreadyexplainedtoUSER. USERlastvisual: Photosworks/faster in v3, wallpaperabsent, Maps/FaceTimestillblack; nosensorcausalproof.
+
+WallpaperCAPI functionsresolvedbyexportnames; nativeStringfromflags3+roundtrip3 validateslocationargument. Correct BOOL return,3id methodcheck; onlyacceptedtruewritesmarker,NOretrymax3*30s. Original365staticgreenbothappearances; notdynamicMetalrenderer. Nextuserobserveswallpaperafter60secSB andnewtimer/Photos; nextlogdirectory logs/perf-phone-graphics-v4-fb120-20261102. LookUPDATE allhashes,softwarevsync120,wallresponseaccepted1,formatpasses. No phoneactionafterboot; fullreport docs/IN2020-wallpaper-120hz-20261102.md +externalreports. Onlysource/config/docsuploaded; artifacts/logs/cache/backupslocal.
+
+## 2026-11-02 wallpaper ABI + 120 Hz software vsync build IN PROGRESS
+
+USER visual feedback: wallpaper absent, Maps/FaceTime stillblack; Photos nowworks and feelsfaster. Sensors missing is USER hypothesis, not confirmed cause. Userrequestsfixwallpaper +120Hznextbuild +directboot, phoneFastboot. Preserve8CPU, validatedgraphicsv3, no userdata/partitionflash.
+
+Native PaperBoardUI metadata +boundedactualcode confirms BOOL3objectABI. PBUIWallpaperLocationsForString at1b0d165a8 uses containsString: lock/home, flags1/2; exported PBUIStringForWallpaperLocations isnativeinverse. Newcode usesdlsymboth, generatesnativeStringfrom3 andchecksroundtrip3, thenBOOLobjc_msgSend withUIColorlight/dark andNSStringlocations; onlymarkacceptedYESontrue, retryNOmax3 separated30s. Nohardcodedprivateaddresses incallcode; sampleslocal logs/wallpaper-v4. ipsw xref is UNSAFE on this cache (tries22GBallocation/OOM); neverrepeat, useboundedreader/symbols.
+
+New0121makes perinstanceVsyncPeriod8333us onlywhen sweetfb_hz120, otherwise16667, bothcallbackrearmpaths+initialtimersetuseperiod. Existing<=60flushbehaviorunchanged. This is SOFTWARE cadence only, no DSI/panelmode switch; toldUSER physical120notverified. Initialhandwrittenpatch96585 supersededbyverifiedsourcegeneratedf185e87ce3fedfe0fa6a72df4043271116a28782; oldCI41360391501canceled. Fourhunks localGNUzeroFuzzcheckPASS afterLFsource normalization. FinalkernelCI41360566477 f185e87 isbuilding; userlandCI41360639350 a0f66869d26c78e9abc1a9710d88668290fd6099 Intelpoolbuilding; canceldefaultduplicate41360631508. DoNOTdeployinitialkernel.
+
+Builderbeinggeneralizedtoverifycurrentv3olduserland41358065214 againstfrozenv3graphicsmanifest, notoldv2. NewADTsame6hashgatedupdater, primary120plus60comparison+oldv3restore60. Needbuildpass/downloadhashes/payloadcmd<608/bounds thenactualuniqueKona fastbootbootexplicitlyauthorized. No phoneactionyetthisturn. No newfullrootflashneeded.
+
 ## 2026-11-02 v3 device log CAPTURED/ANALYZED; phone left in TWRP
 
 USER asked bootTWRP+collect/analyze. Verified localTWRPSHA81c4e03b...; uniquekona fastboot boot accepted. ADB state is recovery (not device), rootTWRP confirmed. Read-only userdata tail capture logs/perf-phone-graphics-v3-ca-20261101:913363validbytes,flush75,no wrap,rawSHA4d01250b043decb0ac675315b192763cecfc899d1300a10c7d483551c473c29c; independent text reconstruction PASS. Captured TWRPrecoverylog/mounts; userdata unmounted. No partition flash/fsck/mount/reboot after capture. Phone remainsTWRP.
