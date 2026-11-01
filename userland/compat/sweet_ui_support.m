@@ -61,12 +61,10 @@ static void wallpaper_recover(void)
     NSDictionary *wall = data ? [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL] : nil;
     if (![wall isKindOfClass:NSDictionary.class]) return;
     NSDictionary *assets = wall[@"assets"][@"lockAndHome"];
-    NSString *hex = assets[@"default"][@"backgroundColor"], *darkHex = assets[@"dark"][@"backgroundColor"];
+    NSString *hex = assets[@"default"][@"backgroundColor"];
     if (![hex isKindOfClass:NSString.class] || hex.length != 7 || ![hex hasPrefix:@"#"]) return;
-    unsigned long long rgb = 0, dark = 0;
+    unsigned long long rgb = 0;
     if (![[NSScanner scannerWithString:[hex substringFromIndex:1]] scanHexLongLong:&rgb]) return;
-    if ([darkHex isKindOfClass:NSString.class] && darkHex.length == 7)
-        (void)[[NSScanner scannerWithString:[darkHex substringFromIndex:1]] scanHexLongLong:&dark];
     dlopen("/System/Library/PrivateFrameworks/SpringBoardUIServices.framework/SpringBoardUIServices", RTLD_NOW);
     Class cls = NSClassFromString(@"SBSUIWallpaperService");
     SEL selector = sel_registerName("setWallpaperColor:darkColor:forLocations:");
@@ -88,8 +86,8 @@ static void wallpaper_recover(void)
             blue:(n & 255) / 255.0 alpha:1];
     };
     @try {
-        ((void (*)(id, SEL, id, id, NSUInteger))objc_msgSend)(cls, selector, color(rgb), color(dark), 3);
-        NSDictionary *record = @{@"resource": @365, @"color": hex, @"darkColor": darkHex ?: @"#000000",
+        ((void (*)(id, SEL, id, id, NSUInteger))objc_msgSend)(cls, selector, color(rgb), color(rgb), 3);
+        NSDictionary *record = @{@"resource": @365, @"color": hex, @"darkColor": hex,
             @"requested": @YES, @"visuallyVerified": @NO};
         NSData *recordData = [NSPropertyListSerialization dataWithPropertyList:record
             format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
