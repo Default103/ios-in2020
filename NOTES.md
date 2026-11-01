@@ -1,3 +1,15 @@
+## 2026-11-02 v3 device log CAPTURED/ANALYZED; phone left in TWRP
+
+USER asked bootTWRP+collect/analyze. Verified localTWRPSHA81c4e03b...; uniquekona fastboot boot accepted. ADB state is recovery (not device), rootTWRP confirmed. Read-only userdata tail capture logs/perf-phone-graphics-v3-ca-20261101:913363validbytes,flush75,no wrap,rawSHA4d01250b043decb0ac675315b192763cecfc899d1300a10c7d483551c473c29c; independent text reconstruction PASS. Captured TWRPrecoverylog/mounts; userdata unmounted. No partition flash/fsck/mount/reboot after capture. Phone remainsTWRP.
+
+Updater all6hashes verified mode0;4changedfilesupdated,2identicalnoop. Paddedblit plusall4actualtargettestsPASS; oldformat/FBOerrors absent in capture; GPUfault0,8CPUonline149samples745144ms. CAafter7200avg9153us,copyin2127us,displayreadbackmicroseconds. Not measured panelFPS and not comparable workloadto v2.
+
+CRITICAL wallpaper patch BUG: log3388 ABI mismatch; NO REQUEST sent. Actual local20H392 metadata selector setWallpaperColor:darkColor:forLocations: encoding B40@0:8@16@24@32 = BOOL return,3objectargs, IMP1a3465b80. Currentguard wronglyexpectsvoid+integerlastarg. Mustverify actuallocations/colorobjectsemantics fromrealcaller andfixABI+recordBOOL; neverjustdropguard/passinteger3asobject. No wallpaper configuration changed by this failed request. Exactmetadata/boundedanalysis stored locally. PosterCPUpreviewactuallycreated375x812 atline7634.
+
+Maps256 loaded/didFinish+scene; noWindowVisiblecapture (248osloglines,notcap). FaceTime289 loaded/didFinish+visible/keyUIWindow (155lines). BothappsDOlaunch; residualblackifconfirmedneedswindow/view/layer+surfacepixeldiagnosis, NOT reinstall. No explicitMaps/FaceTimeObjCthrow/exit observed. Uservisualquestion sent async, pending. SpringBoardmirrorcap~500 meansmissinglateroslogpossible. assetsd11throws:uniqueconstraint2,optimisticlocking7,constraint2; notallthrowscrashes, nocausalproofblackUI. Do NOT deleteDB/reflashfirmware.
+
+Fullanalysis docs/IN2020-v3-log-analysis-20261102.md +externalreports. This turncollect/analyzeonly; no subsequentfixbuild/deploy. Rawlogs/cache/binariesremainlocal. Next: correctverifiednativeABI andtrace actualappcontentafteruserfeedback, keep8CPU60Hzblitformatfixes.
+
 ## 2026-11-01 v3 FINAL HANDOFF: boot accepted; offline recovery complete; device visuals pending
 
 
