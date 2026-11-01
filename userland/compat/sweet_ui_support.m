@@ -2,12 +2,51 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <Metal/Metal.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+
+static id (*default_format)(id, SEL), (*preferred_format)(id, SEL);
+static void (*set_range)(id, SEL, NSInteger);
+static id standard_default(id self, SEL sel)
+{
+    UIGraphicsImageRendererFormat *format = default_format(self, sel);
+    format.preferredRange = UIGraphicsImageRendererFormatRangeStandard;
+    return format;
+}
+static id standard_preferred(id self, SEL sel)
+{
+    UIGraphicsImageRendererFormat *format = preferred_format(self, sel);
+    format.preferredRange = UIGraphicsImageRendererFormatRangeStandard;
+    return format;
+}
+static void standard_range(id self, SEL sel, NSInteger value)
+{
+    (void)value;
+    set_range(self, sel, UIGraphicsImageRendererFormatRangeStandard);
+}
+static void install_standard_snapshots(void)
+{
+    /* The current display backend is BGRA8 and has no native Metal device.
+     * UIKit snapshots should not demand unsupported HDR backing formats. */
+    if (MTLCreateSystemDefaultDevice()) return;
+    Class cls = UIGraphicsImageRendererFormat.class;
+    Method range = class_getInstanceMethod(cls, @selector(setPreferredRange:));
+    Method def = class_getClassMethod(cls, @selector(defaultFormat));
+    Method pref = class_getClassMethod(cls, @selector(preferredFormat));
+    if (!range || !def || !pref) return;
+    set_range = (void (*)(id, SEL, NSInteger))method_getImplementation(range);
+    default_format = (id (*)(id, SEL))method_getImplementation(def);
+    preferred_format = (id (*)(id, SEL))method_getImplementation(pref);
+    method_setImplementation(range, (IMP)standard_range);
+    method_setImplementation(def, (IMP)standard_default);
+    method_setImplementation(pref, (IMP)standard_preferred);
+    fprintf(stderr, "sweet-ui: standard-range UIKit snapshots enabled for BGRA8 backend\n");
+}
 
 static void wallpaper_recover(void)
 {
@@ -64,6 +103,7 @@ void sweet_install_ui_support(const char *name)
         NSBundle.mainBundle.bundleIdentifier.UTF8String ?: "(none)");
     BOOL springboard = !strcmp(name, "SpringBoard");
     if (!springboard && strcmp(name, "Maps") && strcmp(name, "FaceTime")) return;
+    install_standard_snapshots();
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     for (NSNotificationName notification in @[UIApplicationDidFinishLaunchingNotification, UIWindowDidBecomeVisibleNotification]) {
         [center addObserverForName:notification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
