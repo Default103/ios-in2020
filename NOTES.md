@@ -1,3 +1,9 @@
+## 2026-11-01 diagnostic CI SUCCESS; manual-test package ready
+
+CI 41320177941 success (8m41s), commit 4685a191685e11ac102fbf012ffa837e2ea1e2af; full Apple C/C++ compile/link and ZAP checks passed. Kernel downloaded and SHA256 checked: 2af2678fcab496da076e8a23c5c5b06a86c9c385e256446ba8d17e14094061bb. Diagnostic boot M:/ios-in2020/builds/xnu-41320177941/in2020-cpus8-fb60-perf/in2020-ios16-cpus8-fb60-perf-boot.img; SHA256 fb3b40dc2988f2e2a8ad01aedc032d2655c93f5b28f791797e4c9e2809b3a4f1 (18440192 bytes). Retains frozen 8-core ADT/loader and cpus=8 sweetfb_hz=60, adds sweetperf=5 and sweetlog=1. Packer verifies kernel/ramdisk/DTB. NOT PHONE TESTED. User explicitly requires MANUAL device actions: do not adb/fastboot/reboot/pull automatically.
+
+Manual guide: M:/ios-in2020/reports/IN2020-perf-diagnostic-20261101.md. User boots diagnostic, idle30/scroll60/idle30, returns Fastboot, boots TWRP, runs scripts/pull-in2020-perf-log.py --out NEW_DIR then scripts/analyze-in2020-perf.py LOG --out summary.json. Read-only capture script prepared, not run. Current task awaits actual phone metrics; no online/FPS bottleneck conclusion yet. Actual GPU clock remains unmeasured (requested only). Frozen baseline read-only at builds/baselines/in2020-cpus8-fb60-working-20261101.
+
 ## User control instruction: manual device actions only
 
 User explicitly says: after compilation, tell them what to do; DO NOT operate the phone on their behalf. Do not run adb/fastboot/reboot/recovery/log pulls unless the user later authorizes a specific device action. Continue host build/validation/packaging and provide commands.
