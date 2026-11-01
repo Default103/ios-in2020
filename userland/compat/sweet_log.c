@@ -3,7 +3,6 @@
  * Arguments are not treated as Objective-C objects; no unsafe descriptions. */
 #include <dlfcn.h>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <libkern/OSCacheControl.h>
 #include <stdint.h>
 #include <stdio.h>
