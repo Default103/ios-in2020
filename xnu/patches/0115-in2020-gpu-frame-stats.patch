@@ -17,7 +17,7 @@
  				SweetGPUStart();
  			} else {
  				printf("SWEET GPU: kept: not offered to programs (the self-test failed); the GPU stays as it is\n");
-@@ -2515,4 +2517,171 @@
+@@ -2515,4 +2517,154 @@
  	else
  		printf("SWEET GPU: kernel_thread_start failed\n");
  }
@@ -33,7 +33,6 @@
 + * started once the GPU is kept on.
 + *
 + *   sweetgpustats=N  seconds between reports, 0 = off (default: 5)
-+ *   sweetgpubusy=1   also say how long the last submission took to return
 + */
 +#define STAT_GMU_STATUS         (4u * 0x9306)   /* a6xx_gmu_status: halt, idle */
 +#define STAT_GMU_HALT           (1u << 27)
@@ -52,7 +51,6 @@
 +extern uint64_t sweet_fb_copy_count_value(void);
 +
 +static uint32_t stat_seconds;
-+static bool stat_busy;
 +static int stat_sleep_chan;
 +
 +/* What moved since the last report: an idle screen stays silent. */
@@ -60,9 +58,6 @@
 +	uint64_t began;
 +	uint32_t fence, rptr, wptr, status, rbbm_int, hw_fault, cp_int, gmu_status, ao_l, ao_h;
 +	uint64_t swaps, copies;
-+	uint64_t fence_ns;                    /* how long the last submission took */
-+	uint32_t seen_fence;
-+	uint64_t seen_fence_at;
 +} prev;
 +
 +static void
@@ -104,28 +99,22 @@
 +
 +	if (prev.began == 0) {
 +		prev.began = now;
++		prev.copies = copies;
++		return;
 +	}
 +	absolutetime_to_nanoseconds(now - prev.began, &ns);
 +	ms = ns / 1000000ull;
-+	rate = ms ? copies * 1000ull / ms : 0;
++	rate = ms ? (copies - prev.copies) * 1000ull / ms : 0;
 +
 +	moved = fence != prev.fence || rptr != prev.rptr || wptr != prev.wptr ||
 +	    swaps != prev.swaps || copies != prev.copies || status != prev.status ||
 +	    hw_fault != prev.hw_fault;
 +
-+	/* How long a submission takes to come back (sweetgpubusy=1). */
-+	if (fence != prev.seen_fence) {
-+		prev.seen_fence = fence;
-+		prev.seen_fence_at = now;
-+		prev.fence_ns = 0;
-+	} else if (fence != 0 && sweet_gpu_done(fence) && prev.fence_ns == 0 && prev.seen_fence_at != 0) {
-+		prev.fence_ns = now - prev.seen_fence_at;
-+	}
 +	if (!moved) {
 +		return;
 +	}
-+	printf("SWEET GPU STATS: +%llu s | fence %u %s | ring rptr %u wptr %u | status %#x int %#x "
-+	    "cpint %#x fault %#x | gmu %#x%s%s | ao counter %#x:%#x | gpu %u MHz | swaps %llu | "
++	printf("SWEET GPU STATS: +%llu ms | fence %u %s | ring rptr %u wptr %u | status %#x int %#x "
++	    "cpint %#x fault %#x | gmu %#x%s%s | ao counter %#x:%#x | requested gpu %u MHz | swaps %llu | "
 +	    "panel copies %llu (%llu Hz)\n",
 +	    (unsigned long long)ms, fence, sweet_gpu_done(fence) ? "done" : "running",
 +	    rptr, wptr, status, rbbm_int, cp_int, hw_fault, gmu_status,
@@ -136,10 +125,7 @@
 +	printf("SWEET GPU STATS:   the panel is copied once every %u vsync ticks "
 +	    "(sweetfb_hz=N, N>=60 copies every swap); CoreAnimation sent %llu swaps\n",
 +	    ticks, (unsigned long long)swaps);
-+	if (stat_busy && prev.fence_ns != 0) {
-+		printf("SWEET GPU STATS:   the last submission took %llu us to finish\n",
-+		    (unsigned long long)(prev.fence_ns / 1000ull));
-+	}
++	prev.began = now;
 +	prev.fence = fence;
 +	prev.rptr = rptr;
 +	prev.wptr = wptr;
@@ -171,7 +157,6 @@
 +sweet_gpu_stats_start(void)
 +{
 +	thread_t thread;
-+	int busy = 0;
 +
 +	stat_seconds = 5;
 +	(void)PE_parse_boot_argn("sweetgpustats", &stat_seconds, sizeof(stat_seconds));
@@ -179,8 +164,6 @@
 +		printf("SWEET GPU STATS: off\n");
 +		return;
 +	}
-+	(void)PE_parse_boot_argn("sweetgpubusy", &busy, sizeof(busy));
-+	stat_busy = busy != 0;
 +	if (kernel_thread_start(stat_thread, NULL, &thread) == KERN_SUCCESS) {
 +		thread_deallocate(thread);
 +	} else {
@@ -191,6 +174,12 @@
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -54,3 +54,5 @@
+ #include <sys/proc.h>
+ 
++static uint64_t sweet_fb_copy_total;
++
+ enum {
 @@ -253,7 +253,8 @@
  	}
  	IOLockUnlock(fb->fLock);
@@ -200,7 +189,7 @@
  		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
  	}
  	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
-@@ -287,7 +288,23 @@
+@@ -287,7 +288,22 @@
  }
  
  static uint32_t sweet_fb_swaps_logged;
@@ -208,7 +197,6 @@
 +
 +/* Read by bsd/dev/sweet_gpu.c's frame-rate thread: frames CoreAnimation
 + * handed us (swap) and frames actually copied into the panel memory. */
-+static uint64_t sweet_fb_copy_total;
 +
 +extern "C" uint64_t
 +sweet_fb_swap_count_value(void)
