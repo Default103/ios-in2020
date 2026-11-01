@@ -1,3 +1,9 @@
+## User control instruction: manual device actions only
+
+User explicitly says: after compilation, tell them what to do; DO NOT operate the phone on their behalf. Do not run adb/fastboot/reboot/recovery/log pulls unless the user later authorizes a specific device action. Continue host build/validation/packaging and provide commands.
+
+User approved push to Default103/ios-in2020 in2020-current plus cloud build after auto-review requested destination authorization. Commit 4685a19 pushed; CI 41320177941 is building on macos-15. Wait for completion; download/verify kernel, build with scripts/build-in2020-perf-userland.py and provide MANUAL boot/sample/recovery/log capture instructions. scripts/pull-in2020-perf-log.py and analyze-in2020-perf.py prepared; parser sample checks passed, no actual phone metrics yet.
+
 ## 2026-11-01 performance baseline frozen; observer ready for CI
 
 User confirms eight-CPU mode noticeably smoother and authorizes measuring online CPUs, frequencies and framebuffer cost. Frozen READ-ONLY baseline: M:/ios-in2020/builds/baselines/in2020-cpus8-fb60-working-20261101, SHA256 bc7664b7d7d015c7a1e74790c95db3e05d6c62b516a32d77530b2e3c587afdd1. This is user-observed UI improvement, not measured FPS/CPU counts.
