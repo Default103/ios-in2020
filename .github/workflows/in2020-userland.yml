@@ -67,6 +67,13 @@ jobs:
           codesign -s - -f out/lib/libsweet-gl.dylib out/lib/libsweet-ca.dylib
           otool -L out/lib/libsweet-gl.dylib out/lib/libsweet-ca.dylib
           nm -u out/lib/libsweet-gl.dylib | grep -c '_gl' || true
+      - name: Build targeted PosterBoard compatibility and exception evidence
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
+            -O2 -Wall -Wextra -Werror -dynamiclib -install_name /usr/local/lib/libsweet-compat.dylib \
+            -framework CoreFoundation -lobjc -o out/lib/libsweet-compat.dylib userland/compat/sweet_compat.c
+          codesign -s - -f out/lib/libsweet-compat.dylib
       - name: Verify packaged dynamic dependencies and signatures
         run: |
           python3 userland/verify-artifact.py out
