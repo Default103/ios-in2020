@@ -1,3 +1,11 @@
+## 2026-11-01 performance baseline frozen; observer ready for CI
+
+User confirms eight-CPU mode noticeably smoother and authorizes measuring online CPUs, frequencies and framebuffer cost. Frozen READ-ONLY baseline: M:/ios-in2020/builds/baselines/in2020-cpus8-fb60-working-20261101, SHA256 bc7664b7d7d015c7a1e74790c95db3e05d6c62b516a32d77530b2e3c587afdd1. This is user-observed UI improvement, not measured FPS/CPU counts.
+
+Replaced previously unbuilt 0115 with opt-in sweetperf=N (5..60s) CPU/GPU/framebuffer observer. Starts after CPU-frequency init independently of GPU; reports processor_avail_count vs selected topology, raw EPSS state/request and estimated MHz, framebuffer swap/present/timer deltas, present wall average and lifetime max, copied bytes. GPU snapshot only uses registers already read by working driver: requested MHz (NOT measured frequency), submitted/completed fence, ring pointers, RBBM fault/status and GMU power/busy. No new power/frequency writes. Frame counters individually atomic, not transactional; present calls are not physical flips/FPS. GPU readiness published acquire/release; fence store/load atomic. Diagnostics default OFF.
+
+Patch applies to downloaded exact baseline buildtree; two C files compile to ARM64 Mach-O using Zig/baseline generated headers. C++ local check blocked by upstream Clang lacking Apple XNU allocation builtins; needs Apple CI. GitHub CLI installed locally and existing Git credential works WITHOUT printing/persisting token. Baseline buildtree downloaded to logs/buildtree-41234547701. Next: push, dispatch xnu.yml on in2020-current, inspect full compile/link; then build eight-CPU/60Hz diagnostic with sweetperf=5 sweetlog=1 for recoverable 4MiB tail log. User's phone may still be in iOS; do not restart/flash userdata. Need temporary boot + recovery log pull to get actual evidence. GPU actual clock remains unmeasured; avoid requested=actual claims.
+
 ## 2026-11-01 eight-core temporary boot ACCEPTED
 
 User returned to Fastboot. Verified kona/unlocked/slot a and eight-core image SHA256; fastboot boot cpus8/fb60 image Sending/Booting OKAY, total 0.512s. No partition flash. AWAIT PHONE OBSERVATION; actual eight online CPUs and FPS unverified. Image/report paths and hashes in entry below; supersedes its waiting-for-fastboot status.

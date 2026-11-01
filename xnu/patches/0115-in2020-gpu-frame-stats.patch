@@ -1,214 +1,288 @@
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -22,11 +22,18 @@
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++
++/* Built-in observer: exported by osfmk/kern/processor.c. */
++extern uint32_t processor_avail_count;
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ void sweet_cpufreq_init(void);
++static void sweet_perf_start(void);
++static vm_offset_t perf_domains[3];
+ 
+ #define CPUFREQ_DOMAIN_PA(d)  (0x18591000u + 0x1000u * (d))
+ #define CPUFREQ_DOMAINS       3u
+@@ -86,6 +93,7 @@
+ 			printf("SWEET CPUFREQ: domain %u map failed\n", d);
+ 			continue;
+ 		}
++		perf_domains[d] = base;
+ 		unsigned n = 0, top = 0, prev = 0;
+ 		unsigned khz[CPUFREQ_LUT_MAX];
+ 		for (unsigned i = 0; i < CPUFREQ_LUT_MAX; ++i) {
+@@ -113,5 +121,84 @@
+ 	}
+ 	printf("SWEET CPUFREQ: busy loop %llu us before, %llu us after (mode %u)\n",
+ 	    (unsigned long long)before, (unsigned long long)cpufreq_bench(), mode);
+-}
++	sweet_perf_start();
++}
++
++/* sweetperf=N: opt-in, 5..60 second read-only snapshots, independent of GPU init.
++ * Framebuffer counters are individually atomic, not a transactional snapshot.
++ * present_wall_us includes preemption: it is not pure CPU execution time.
++ */
++extern void sweet_fb_perf_snapshot(uint64_t values[6]);
++extern bool sweet_gpu_perf_snapshot(uint64_t values[9]);
++static unsigned perf_seconds;
++static int perf_chan;
++
++static void
++sweet_perf_thread(void *arg, wait_result_t result)
++{
++	uint64_t prev[6] = {0}, fb[6], gpu[9], began = mach_absolute_time();
++	(void)arg;
++	(void)result;
++	sweet_fb_perf_snapshot(prev);
++	printf("SWEET PERF: interval=%u s, CPU state is EPSS estimate; GPU frequency is REQUESTED only\n", perf_seconds);
++	for (;;) {
++		uint64_t deadline, ns, now;
++		clock_interval_to_deadline(perf_seconds, NSEC_PER_SEC, &deadline);
++		(void)assert_wait_deadline(&perf_chan, THREAD_UNINT, deadline);
++		thread_block(THREAD_CONTINUE_NULL);
++		now = mach_absolute_time();
++		absolutetime_to_nanoseconds(now - began, &ns);
++		uint64_t ms = ns / 1000000ull;
++		sweet_fb_perf_snapshot(fb);
++		uint64_t presents = fb[1] - prev[1];
++		uint64_t wall_ns = fb[3] - prev[3];
++		printf("SWEET PERF: dt_ms=%llu online=%u selected=%u swaps=%llu presents=%llu ticks=%llu "
++		    "present_mHz=%llu present_wall_avg_us=%llu present_wall_max_us=%llu bytes=%llu\n",
++		    (unsigned long long)ms, __atomic_load_n(&processor_avail_count, __ATOMIC_RELAXED),
++		    ml_get_topology_info()->num_cpus, (unsigned long long)(fb[0] - prev[0]),
++		    (unsigned long long)presents, (unsigned long long)(fb[2] - prev[2]),
++		    (unsigned long long)(ms ? presents * 1000000ull / ms : 0),
++		    (unsigned long long)(presents ? wall_ns / presents / 1000ull : 0),
++		    (unsigned long long)(fb[4] / 1000ull), (unsigned long long)(fb[5] - prev[5]));
++		for (unsigned d = 0; d < CPUFREQ_DOMAINS; ++d) {
++			if (!perf_domains[d]) {
++				printf("SWEET PERF CPU: domain=%u unmapped\n", d);
++				continue;
++			}
++			printf("SWEET PERF CPU: domain=%u request=%u state_raw=%#x state_mhz=%u\n", d,
++			    cpufreq_rd(perf_domains[d], CPUFREQ_PERF_STATE),
++			    cpufreq_rd(perf_domains[d], CPUFREQ_DOMAIN_STATE),
++			    (cpufreq_rd(perf_domains[d], CPUFREQ_DOMAIN_STATE) & 0xffu) * CPUFREQ_XO_KHZ / 1000u);
++		}
++		if (sweet_gpu_perf_snapshot(gpu)) {
++			printf("SWEET PERF GPU: ready=1 requested_mhz=%llu submitted=%llu completed=%llu rptr=%llu wptr=%llu "
++			    "status=%#llx fault=%#llx gmu_power=%#llx gmu_busy=%#llx\n",
++			    (unsigned long long)gpu[0], (unsigned long long)gpu[1], (unsigned long long)gpu[2],
++			    (unsigned long long)gpu[3], (unsigned long long)gpu[4], (unsigned long long)gpu[5],
++			    (unsigned long long)gpu[6], (unsigned long long)gpu[7], (unsigned long long)gpu[8]);
++		} else {
++			printf("SWEET PERF GPU: ready=0 (GPU init not complete or self-test failed)\n");
++		}
++		memcpy(prev, fb, sizeof(prev));
++		began = now;
++	}
++}
++
++static void
++sweet_perf_start(void)
++{
++	thread_t thread;
++	unsigned seconds = 0;
++	(void)PE_parse_boot_argn("sweetperf", &seconds, sizeof(seconds));
++	if (!seconds) {
++		return;
++	}
++	perf_seconds = MAX(5u, MIN(seconds, 60u));
++	if (kernel_thread_start(sweet_perf_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		printf("SWEET PERF: failed to start observer\n");
++	}
++}
++
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
 --- a/bsd/dev/sweet_gpu.c
 +++ b/bsd/dev/sweet_gpu.c
-@@ -1056,6 +1056,7 @@
- #define GPU_CP_IB1_BASE       GPU_WORD(0x0928)
- #define GPU_CP_IB1_REM_SIZE   GPU_WORD(0x092a)
+@@ -1231,7 +1231,7 @@
+ uint32_t
+ sweet_gpu_last(void)
+ {
+-	return kept.fence;
++	return __atomic_load_n(&kept.fence, __ATOMIC_RELAXED);
+ }
  
-+void sweet_gpu_stats_start(void);    /* the frame-rate evidence thread, at the end of this file */
- void SweetGPUStart(void);                     /* iokit/Kernel/arm/SweetGPU.cpp */
- bool sweet_gpu_ready(void);
- bool sweet_gpu_parameter(uint32_t which, uint64_t *value);
-@@ -2396,7 +2397,8 @@
+ static void
+@@ -1265,8 +1265,8 @@
+ 	}
+ 	if (room < wanted)
+ 		return 0;
+-	if (++kept.fence == 0)
+-		kept.fence = 1;
++	uint32_t next_fence = __atomic_load_n(&kept.fence, __ATOMIC_RELAXED) + 1u;
++	__atomic_store_n(&kept.fence, next_fence ? next_fence : 1u, __ATOMIC_RELAXED);
+ 	kept_pkt7(CP_EVENT_WRITE, 1);
+ 	kept_ring(EVENT_CCU_INVALIDATE_DEPTH);
+ 	kept_pkt7(CP_EVENT_WRITE, 1);
+@@ -1292,7 +1292,7 @@
+ 	}
+ 	kept.sent = kept.at;
+ 	gpu_wr(kept.gpu, GPU_CP_RB_WPTR, kept.at);
+-	return kept.fence;
++	return __atomic_load_n(&kept.fence, __ATOMIC_RELAXED);
+ }
+ 
+ /*
+@@ -2395,7 +2395,7 @@
+ 			printf("SWEET GPU: sweetgpukeep=1: THE GPU IS KEPT ON (%u MHz, ring at word %u, addresses %#llx+%#llx)\n",
  			    kept.khz / 1000, kept.at, KEPT_VA_START, KEPT_VA_SIZE);
  			if (kept_self_test()) {
- 				kept.on = true;
+-				kept.on = true;
++				__atomic_store_n(&kept.on, true, __ATOMIC_RELEASE);
  				printf("SWEET GPU: kept: starting the SweetGPU service for programs\n");
-+				sweet_gpu_stats_start();
  				SweetGPUStart();
  			} else {
- 				printf("SWEET GPU: kept: not offered to programs (the self-test failed); the GPU stays as it is\n");
-@@ -2515,4 +2517,154 @@
+@@ -2515,4 +2515,26 @@
  	else
  		printf("SWEET GPU: kernel_thread_start failed\n");
  }
-+/*
-+ * ---- is the GPU really working while iOS draws? ----
-+ *
-+ * The screen updates slowly and there are four suspects: one CPU busy with
-+ * the CPU copy of frames, an unfinished GPU path, a 3D core left at a low
-+ * power level, and the panel copy rate itself. This tells them apart
-+ * without printing per frame: one line every few seconds, and only when
-+ * something moved. Nothing here changes the GPU; it reads registers that
-+ * already exist plus the framebuffer's own counters, from its own thread,
-+ * started once the GPU is kept on.
-+ *
-+ *   sweetgpustats=N  seconds between reports, 0 = off (default: 5)
-+ */
-+#define STAT_GMU_STATUS         (4u * 0x9306)   /* a6xx_gmu_status: halt, idle */
-+#define STAT_GMU_HALT           (1u << 27)
-+#define STAT_GMU_IDLE           (1u << 28)
-+#define STAT_CP_ALWAYS_ON_L     (4u * 0x04fc)   /* CP_ALWAYS_ON_COUNTER, 19.2 MHz */
-+#define STAT_CP_ALWAYS_ON_H     (4u * 0x04fd)
-+#define STAT_CP_RB_RPTR         GPU_WORD(0x0806)
-+#define STAT_CP_RB_WPTR         GPU_WORD(0x0807)
-+#define STAT_RBBM_STATUS        GPU_WORD(0x0210)
-+#define STAT_RBBM_INT_0         GPU_WORD(0x0201)
-+#define STAT_CP_HW_FAULT        GPU_WORD(0x0821)
-+#define STAT_CP_INTERRUPT       GPU_WORD(0x0823)
 +
-+/* iokit/Kernel/arm/SweetFramebuffer.cpp: frames arriving, frames shown. */
-+extern uint64_t sweet_fb_swap_count_value(void);
-+extern uint64_t sweet_fb_copy_count_value(void);
-+
-+static uint32_t stat_seconds;
-+static int stat_sleep_chan;
-+
-+/* What moved since the last report: an idle screen stays silent. */
-+static struct {
-+	uint64_t began;
-+	uint32_t fence, rptr, wptr, status, rbbm_int, hw_fault, cp_int, gmu_status, ao_l, ao_h;
-+	uint64_t swaps, copies;
-+} prev;
-+
-+static void
-+stat_wait(unsigned seconds)
++bool sweet_gpu_perf_snapshot(uint64_t values[9]);
++bool
++sweet_gpu_perf_snapshot(uint64_t values[9])
 +{
-+	uint64_t deadline;
-+
-+	clock_interval_to_deadline(seconds, NSEC_PER_SEC, &deadline);
-+	(void)assert_wait_deadline(&stat_sleep_chan, THREAD_UNINT, deadline);
-+	thread_block(THREAD_CONTINUE_NULL);
-+}
-+
-+static void
-+stat_report(void)
-+{
-+	uint64_t now = mach_absolute_time();
-+	uint32_t fence = sweet_gpu_last();
-+	uint32_t hz = 10, ticks;
-+	uint32_t rptr, wptr, status, rbbm_int, hw_fault, cp_int, ao_l, ao_h, gmu_status;
-+	uint64_t swaps = sweet_fb_swap_count_value(), copies = sweet_fb_copy_count_value();
-+	uint64_t ns, ms, rate;
-+	bool moved;
-+
-+	if (!kept.on) {
-+		return;
++	if (!__atomic_load_n(&kept.on, __ATOMIC_ACQUIRE)) {
++		return false;
 +	}
-+	rptr = gpu_rd(kept.gpu, STAT_CP_RB_RPTR);
-+	wptr = gpu_rd(kept.gpu, STAT_CP_RB_WPTR);
-+	status = gpu_rd(kept.gpu, STAT_RBBM_STATUS);
-+	rbbm_int = gpu_rd(kept.gpu, STAT_RBBM_INT_0);
-+	hw_fault = gpu_rd(kept.gpu, STAT_CP_HW_FAULT);
-+	cp_int = gpu_rd(kept.gpu, STAT_CP_INTERRUPT);
-+	ao_l = gpu_rd(kept.gpu, STAT_CP_ALWAYS_ON_L);
-+	ao_h = gpu_rd(kept.gpu, STAT_CP_ALWAYS_ON_H);
-+	gmu_status = gmu_va != 0 ? gpu_rd(gmu_va, STAT_GMU_STATUS) : 0;
-+	/* The panel copy rate, the same rule AppleCLCD::start() uses. */
-+	(void)PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
-+	ticks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
-+
-+	if (prev.began == 0) {
-+		prev.began = now;
-+		prev.copies = copies;
-+		return;
-+	}
-+	absolutetime_to_nanoseconds(now - prev.began, &ns);
-+	ms = ns / 1000000ull;
-+	rate = ms ? (copies - prev.copies) * 1000ull / ms : 0;
-+
-+	moved = fence != prev.fence || rptr != prev.rptr || wptr != prev.wptr ||
-+	    swaps != prev.swaps || copies != prev.copies || status != prev.status ||
-+	    hw_fault != prev.hw_fault;
-+
-+	if (!moved) {
-+		return;
-+	}
-+	printf("SWEET GPU STATS: +%llu ms | fence %u %s | ring rptr %u wptr %u | status %#x int %#x "
-+	    "cpint %#x fault %#x | gmu %#x%s%s | ao counter %#x:%#x | requested gpu %u MHz | swaps %llu | "
-+	    "panel copies %llu (%llu Hz)\n",
-+	    (unsigned long long)ms, fence, sweet_gpu_done(fence) ? "done" : "running",
-+	    rptr, wptr, status, rbbm_int, cp_int, hw_fault, gmu_status,
-+	    (gmu_status & STAT_GMU_HALT) ? " HALTED" : "",
-+	    (gmu_status & STAT_GMU_IDLE) ? " idle" : "",
-+	    ao_h, ao_l, kept.khz / 1000u, (unsigned long long)swaps,
-+	    (unsigned long long)copies, (unsigned long long)rate);
-+	printf("SWEET GPU STATS:   the panel is copied once every %u vsync ticks "
-+	    "(sweetfb_hz=N, N>=60 copies every swap); CoreAnimation sent %llu swaps\n",
-+	    ticks, (unsigned long long)swaps);
-+	prev.began = now;
-+	prev.fence = fence;
-+	prev.rptr = rptr;
-+	prev.wptr = wptr;
-+	prev.status = status;
-+	prev.rbbm_int = rbbm_int;
-+	prev.hw_fault = hw_fault;
-+	prev.cp_int = cp_int;
-+	prev.gmu_status = gmu_status;
-+	prev.ao_l = ao_l;
-+	prev.ao_h = ao_h;
-+	prev.swaps = swaps;
-+	prev.copies = copies;
-+}
-+
-+static void
-+stat_thread(void *arg, wait_result_t result)
-+{
-+	(void)arg;
-+	(void)result;
-+
-+	printf("SWEET GPU STATS: reporting every %u s while something moves\n", stat_seconds);
-+	for (;;) {
-+		stat_wait(stat_seconds);
-+		stat_report();
-+	}
-+}
-+
-+void
-+sweet_gpu_stats_start(void)
-+{
-+	thread_t thread;
-+
-+	stat_seconds = 5;
-+	(void)PE_parse_boot_argn("sweetgpustats", &stat_seconds, sizeof(stat_seconds));
-+	if (stat_seconds == 0) {
-+		printf("SWEET GPU STATS: off\n");
-+		return;
-+	}
-+	if (kernel_thread_start(stat_thread, NULL, &thread) == KERN_SUCCESS) {
-+		thread_deallocate(thread);
-+	} else {
-+		printf("SWEET GPU STATS: kernel_thread_start failed\n");
-+	}
++	volatile uint32_t *fence = (volatile uint32_t *)(kept.scratch + KEPT_FENCE_AT);
++	gpu_to_memory((vm_offset_t)fence, 4);
++	values[0] = kept.khz / 1000u; /* Requested, not measured clock frequency. */
++	values[1] = sweet_gpu_last();
++	values[2] = *fence;
++	values[3] = gpu_rd(kept.gpu, GPU_CP_RB_RPTR);
++	values[4] = gpu_rd(kept.gpu, GPU_CP_RB_WPTR);
++	values[5] = gpu_rd(kept.gpu, GPU_RBBM_STATUS);
++	values[6] = gpu_rd(kept.gpu, GPU_CP_HW_FAULT);
++	values[7] = gpu_rd(gmu_va, GMU_RPMH_POWER_STATE);
++	values[8] = gpu_rd(gmu_va, GMU_AO_GPU_CX_BUSY);
++	return true;
 +}
 +
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -54,3 +54,5 @@
+@@ -51,6 +51,11 @@
+ #include <kern/clock.h>
  #include <sys/proc.h>
  
-+static uint64_t sweet_fb_copy_total;
++static uint64_t sweet_fb_swap_count;
++static uint64_t sweet_fb_present_count, sweet_fb_tick_count;
++static uint64_t sweet_fb_present_ns, sweet_fb_present_max_ns, sweet_fb_copy_bytes;
++static bool sweet_fb_perf_enabled;
 +
  enum {
-@@ -253,7 +253,8 @@
+ 	kSweetFBGetLayerDefaultSurface  = 3,
+ 	kSweetFBSwapBegin               = 4,
+@@ -192,6 +197,9 @@
+ 		IOLog("SWEET FB: no vsync timer\n");
+ 		return false;
+ 	}
++	uint32_t perf = 0;
++	(void)PE_parse_boot_argn("sweetperf", &perf, sizeof(perf));
++	sweet_fb_perf_enabled = perf != 0;
+ 	uint32_t hz = 10;
+ 	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
+ 	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
+@@ -212,6 +220,9 @@
+ 	AppleCLCD *fb = (AppleCLCD *)owner;
+ 	uint64_t now = mach_absolute_time();
+ 	uint64_t count = ++fb->fVsyncCount;
++	if (sweet_fb_perf_enabled) {
++		__atomic_fetch_add(&sweet_fb_tick_count, 1, __ATOMIC_RELAXED);
++	}
+ 	uint64_t values[6] = {
+ 		(uint32_t)count, (uint32_t)(count >> 32),
+ 		(uint32_t)now, (uint32_t)(now >> 32),
+@@ -253,7 +264,18 @@
  	}
  	IOLockUnlock(fb->fLock);
  	if (rec != NULL) {
++		uint64_t before = sweet_fb_perf_enabled ? mach_absolute_time() : 0;
  		fb->present(rec);
-+		sweet_fb_copy_total++;
++		if (sweet_fb_perf_enabled) {
++			uint64_t ns;
++			absolutetime_to_nanoseconds(mach_absolute_time() - before, &ns);
++			__atomic_fetch_add(&sweet_fb_present_ns, ns, __ATOMIC_RELAXED);
++			__atomic_fetch_add(&sweet_fb_present_count, 1, __ATOMIC_RELAXED);
++			/* Single writer: this display's workloop; readers use atomic loads. */
++			if (ns > __atomic_load_n(&sweet_fb_present_max_ns, __ATOMIC_RELAXED)) {
++				__atomic_store_n(&sweet_fb_present_max_ns, ns, __ATOMIC_RELAXED);
++			}
++		}
  		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
  	}
  	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
-@@ -287,7 +288,22 @@
+@@ -287,7 +309,6 @@
  }
  
  static uint32_t sweet_fb_swaps_logged;
- static uint64_t sweet_fb_swap_count;
-+
-+/* Read by bsd/dev/sweet_gpu.c's frame-rate thread: frames CoreAnimation
-+ * handed us (swap) and frames actually copied into the panel memory. */
-+
-+extern "C" uint64_t
-+sweet_fb_swap_count_value(void)
-+{
-+	return sweet_fb_swap_count;
-+}
-+
-+extern "C" uint64_t
-+sweet_fb_copy_count_value(void)
-+{
-+	return sweet_fb_copy_total;
-+}
+-static uint64_t sweet_fb_swap_count;
  
  /* Copy each enabled layer's surface into the panel memory (no scaling). */
  /*
+@@ -303,8 +324,9 @@
+ 	memcpy(fPending, rec, SWEET_FB_SWAP_REC_SIZE);
+ 	fDirty = true;
+ 	IOLockUnlock(fLock);
+-	if ((++sweet_fb_swap_count % 1000) == 0) {
+-		IOLog("SWEET FB: %llu swaps\n", sweet_fb_swap_count);
++	uint64_t swaps = __atomic_add_fetch(&sweet_fb_swap_count, 1, __ATOMIC_RELAXED);
++	if ((swaps % 1000) == 0) {
++		IOLog("SWEET FB: %llu swaps\n", swaps);
+ 	}
+ }
+ 
+@@ -391,6 +413,9 @@
+ 			src = 0;
+ 		}
+ 		if (src != 0 && bpe == 4) {
++			if (sweet_fb_perf_enabled) {
++				__atomic_fetch_add(&sweet_fb_copy_bytes, (uint64_t)w * (uint64_t)h * 4u, __ATOMIC_RELAXED);
++			}
+ 			for (int32_t y = 0; y < h; y++) {
+ 				memcpy((void *)(fPixels + (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4),
+ 				    (const void *)(src + s->offset + (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4),
+@@ -399,6 +424,22 @@
+ 		}
+ 		s->release();
+ 	}
++}
++
++
++/* Approximate snapshot of independent atomic counters, max is since boot.
++ * A present call may copy zero bytes; these are not physical panel flips.
++ */
++extern "C" void sweet_fb_perf_snapshot(uint64_t values[6]);
++extern "C" void
++sweet_fb_perf_snapshot(uint64_t values[6])
++{
++	values[0] = __atomic_load_n(&sweet_fb_swap_count, __ATOMIC_RELAXED);
++	values[1] = __atomic_load_n(&sweet_fb_present_count, __ATOMIC_RELAXED);
++	values[2] = __atomic_load_n(&sweet_fb_tick_count, __ATOMIC_RELAXED);
++	values[3] = __atomic_load_n(&sweet_fb_present_ns, __ATOMIC_RELAXED);
++	values[4] = __atomic_load_n(&sweet_fb_present_max_ns, __ATOMIC_RELAXED);
++	values[5] = __atomic_load_n(&sweet_fb_copy_bytes, __ATOMIC_RELAXED);
+ }
+ 
+ bool
