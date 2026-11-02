@@ -23,6 +23,11 @@ jobs:
           python3 tools/check-in2020-keys.py
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/pm8150_keys_test.c -o keys-test
           ./keys-test
+      - name: Test ADSP firmware boundary gate and patch consistency
+        run: |
+          python3 tools/check-in2020-audio.py
+          clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/mdt_test.c -o mdt-test
+          ./mdt-test
       - name: Test SEC packet decoder with sanitizers
         run: |
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/sec_event.c in2020/sec_event_test.c -o sec-test
