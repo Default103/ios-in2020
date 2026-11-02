@@ -32,6 +32,7 @@ jobs:
           ./arc-test
       - name: Test fixed camera probe packet ABI
         run: |
+          python3 in2020/sensor_v2_test.py
           clang -DIN2020_PROBE_HOST_TEST -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o camera-packet-test
           ./camera-packet-test
           clang -DIN2020_PROBE_HOST_TEST -DIN2020_FRONT_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o front-packet-test

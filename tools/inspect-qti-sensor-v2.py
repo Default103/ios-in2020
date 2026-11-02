@@ -8,6 +8,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import math
 import struct
 
 
@@ -96,6 +97,37 @@ def inspect(data):
                            structural_references_validated=True,
                            command_semantics_validated=False))
 
+    # V2 resolution records have 51 64-bit fields. Resolve counted references
+    # before reporting candidates. These are not executable capture settings.
+    resolutions = [s for s in symbols.values() if s['name'] == 'resolutionData']
+    require(len(resolutions) == 1, 'missing or ambiguous resolution array')
+    modes_raw = payload(resolutions[0])
+    require(0 < len(modes_raw) <= 64 * 408 and len(modes_raw) % 408 == 0,
+            'unsupported V2 resolution shape')
+    modes = []
+    for offset in range(0, len(modes_raw), 408):
+        fields = struct.unpack_from('<51Q', modes_raw, offset)
+        fps = struct.unpack_from('<d', modes_raw, offset + 11 * 8)[0]
+        stream = symbols.get(fields[2])
+        table = symbols.get(fields[20])
+        require(stream is not None and stream['name'] == 'streamConfiguration' and
+                0 < fields[1] <= 8 and stream['size'] == fields[1] * 64,
+                'invalid resolution stream reference')
+        require(table is not None and table['name'] == 'regSetting' and
+                0 < fields[19] <= 65536 and table['size'] == fields[19] * 80,
+                'invalid resolution register reference')
+        require(math.isfinite(fps) and 0 < fps <= 1000,
+                'invalid inferred resolution frame rate')
+        streams = []
+        for at in range(0, stream['size'], 64):
+            values = struct.unpack_from('<8Q', payload(stream), at)
+            streams.append(dict(raw_fields=list(values)))
+        modes.append(dict(index=len(modes), inferred_fps=fps,
+                          raw_timing_fields=list(fields[3:11]),
+                          raw_csi_fields=list(fields[12:18]),
+                          register_symbol=fields[20], register_records=fields[19],
+                          streams=streams, capture_semantics_validated=False))
+
     return dict(status='OFFLINE_LAYOUT_INFERRED_NOT_SENSOR_PROBED',
                 sha256=hashlib.sha256(data).hexdigest(), sensor_name=name,
                 symbol_count=len(symbols), sections=len(sections),
@@ -105,6 +137,7 @@ def inspect(data):
                 raw_power_up_triplets=powers(root[15], root[16]),
                 raw_power_down_triplets=powers(root[17], root[18]),
                 register_table_inventory=tables,
+                resolution_candidates=modes,
                 power_enum_translation_validated=False, register_tables_executed=False)
 
 

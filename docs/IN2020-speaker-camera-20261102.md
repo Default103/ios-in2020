@@ -113,3 +113,36 @@ CONFIG_DEVMEM; attempts to read command-DB by those unavailable interfaces
 produced no data. Future ARC resource lookup must validate the live command DB
 inside XNU and share the existing TCS1 completion/quarantine policy. Phone left
 in TWRP while source work continues.
+
+## Next native DSP test and camera mode preparation
+
+Source 655a2b9d43adf13b3a05ca8cbe63b1b220e7a235 starts a new staged DSP
+test: workflow 41490492816 (Intel macOS kernel) and 41490491676 (host checks).
+The latter's host job passed; QEMU and the native build must be recorded
+separately. Step 7 must be tested and its log reviewed before step 11.
+This stage replaces the reference's TCS0 writer with the shared TCS1 engine,
+validates LCX/LMX exact level indices in command DB, and reads only TFA9874
+identity/OTP status. It does not configure AFE/PCM or enable amplifiers.
+
+Further offline V2 parsing resolves resolution-to-stream and resolution-to-
+register-table references with exact lengths (408-byte resolution, 64-byte
+stream, 80-byte register records). Six supported modules pass; GC5035 remains
+rejected. Main IMX689 MP has nine mode candidates and front IMX471 three.
+Raw timing/CSI fields and candidate frame rates are reported, without generating
+executable capture settings. Synthetic tests cover all file truncations,
+malformed references/counts and non-finite frame rates. These checks do not
+prove a working CSI link or camera frame.
+
+Live FDT supply resolution shows main VDIG pm8009_l1 at 1104000 uV, front
+VDIG pm8009_l3 at 1056000 uV, shared VIO pm8009_l7 at 1800000 uV.
+Both VANA references point to pm8150a_bob with sensor GPIO gates; main also
+uses pm8150_s5/custom1. Do not substitute the reference camera's PM8008 driver.
+CAMCC clock IDs map main to MCLK0 (RCG 0x5000, branch 0x5018) and front
+to MCLK3 (0x5054/0x506c), 19.2 MHz TCXO entry in the pinned original
+camcc-kona.c. No camera clock or supply was programmed from XNU.
+
+For the future speaker stream, measured FDT names tertiary MI2S pins 133
+(bit clock), 135 (word select), 134/137 (data0/1), with active drive 8 mA,
+no pull. Mixer paths select two channels S24_LE; original machine driver
+defaults to 48 kHz, and audio ION stream is 0x1801 with SID mask 0xf.
+These are configuration inputs, not evidence that the clocks or PCM run.
