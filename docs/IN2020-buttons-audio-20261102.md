@@ -63,3 +63,29 @@ no imported audio DSP/PCM driver or iOS hardware audio HAL. Remaining work:
 
 No speaker enable, calibration write, module loading, root image update or
 partition flash was performed. The speakers are not adapted yet.
+
+## Validation and pinned audio source
+
+Local optimized Windows key-state fixtures passed. The full host CI job
+41443511757 passed the key-state tests under address/undefined sanitizers and
+verified exact source/patch consistency. This does not exercise PMIC hardware.
+Kernel CI 41443275083 remained queued on macos-15; a macos-15-intel runner choice
+was added to allow the full kernel compile to proceed on the alternate pool.
+
+The separate official audio repository is
+https://github.com/OnePlusOSS/android_vendor_qcom_opensource_audio_kernel_sm8250,
+Android 11 commit 0ac91e8996028893ddca8295e59d187c1cc8a281. Its kona.c names both
+TFA DAI components at 0-0034 and 0-0035, on tertiary MI2S playback. The TFA
+source calls send_tfa_cal_apr and send_tfa_cal_in_band, implemented by q6afe.c;
+this establishes an external Qualcomm DSP dependency, not just an I2C amp switch.
+The matched source was downloaded with per-file hashes to the private reference
+directory; it was not added to this repository.
+
+`tools/inspect-tfa-container.py` inventories metadata without applying tuning.
+The actual stock container is 3861 bytes, version 3_01, CRC valid, SHA256
+ ae54fd5a741ef2de1b157421bf820dfa208e5cfdce939b60c76d77bc7c6cf8ed.
+Its device P is address 0x34 with receiver/speaker/calibrate.cal profiles;
+device Q is 0x35 with speaker/speaker/calibrate.cal profiles. Both declared
+hardware IDs are zero, so the container cannot establish measured chip identity.
+Truncation, CRC corruption and a CRC-correct out-of-bounds device pointer were
+rejected by the inspector. This validates metadata only, not all tuning payloads.

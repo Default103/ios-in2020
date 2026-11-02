@@ -1,3 +1,9 @@
+## 2026-11-02 keys host tests PASS / full kernel queued
+
+9dd1439 committed. Initialpush auto-reviewrejected unverifieddestination; USER explicitly authorized push to Default103/ios-in2020 and macOSbuild, then pushSUCCESS. Kernel41443275083 macos15 stillqueued. Host41443511757 hostjobSUCCESS (ASAN/UBSANkeys +patchconsistency); QEMUusesprior41360566477kernel and doesNOTtestnewkeys. LocalZigoptimizedfixturesPASS (normalcacheaccessrequired). Addedmacos15intelrunneroption for alternatebuild; nextdispatch onnewcommit. PhoneunchangedTWRP; no newkernelboot.
+
+Pinned officialseparateaudio repo OnePlusOSS/android_vendor_qcom_opensource_audio_kernel_sm8250 0ac91e8996028893ddca8295e59d187c1cc8a281 downloaded40files privately. kona.cTFA34/35 tertiaryMI2S; TFAcallsQ6AFEAPR/inband externalDSP. Addedreadonlycontainerinspector; actual3861byte3_01CRCvalid profiles P34receiver/speaker/calibrate,Q35speaker/speaker/calibrate; bothID0notphysicalchipproof. Truncation/CRC/badpointerrejected. AudioSTILLINCOMPLETE/nooutput. Details docs/IN2020-buttons-audio-20261102.md.
+
 ## 2026-11-02 buttons implementation / audio audit IN PROGRESS
 
 User requests standard power lock/wake and volume keys plus speakers; phone TWRP. New0122 replaces Redmi wiring with PM8150 SID0 GPIO6/7 and PONbit0. core+4 is INT_EN not APIDcount; bounded512-entry table, exactv5version, observer reads only, input checks, debounce/failure-release. Sources in2020/pm8150_keys*. Patch exact old-side and source-consistency PASS. Host compile/fullkernel pending; existing sweetkeys=0 must change1 in test image. No runtime success yet.

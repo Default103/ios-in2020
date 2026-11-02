@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: Hosted runner (macos-14 only until its retirement)
+        description: Hosted macOS build runner
         type: choice
         options:
           - macos-15
+          - macos-15-intel
           - macos-14
         default: macos-15
       macos_version:
