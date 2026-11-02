@@ -39,6 +39,12 @@ jobs:
           ./camera-packet-test
           clang -DIN2020_PROBE_HOST_TEST -DIN2020_FRONT_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o front-packet-test
           ./front-packet-test
+          clang -DIN2020_PROBE_HOST_TEST -DIN2020_TELE_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o tele-packet-test
+          ./tele-packet-test
+          clang -DIN2020_PROBE_HOST_TEST -DIN2020_ULTRA_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o ultra-packet-test
+          ./ultra-packet-test
+          clang -DIN2020_PROBE_HOST_TEST -DIN2020_COLOR_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o color-packet-test
+          ./color-packet-test
       - name: Test SEC packet decoder with sanitizers
         run: |
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/sec_event.c in2020/sec_event_test.c -o sec-test

@@ -1,3 +1,9 @@
+## 2026-11-02 ALL FIVE camera IDs matched in recovery; AFE kernel building
+
+Correct mapping confirmed: slot0/CSI0 IMX689MP addr34 (earlier); slot1/CSI1 IMX586 addr20 (BGnotdetermined); slot2/CSI3 IMX471addr20(earlier); slot3/CSI2 S5K3M5id30d5addr5a; slot4/CSI4 GC5035id5035addr6e. Teleinitialwrongslot1readNACKandpowereddown; raw moduleConfiguration firstu64 cameraIDprovedIMX586=1,S5K3M5=3, then correctedtele3probeSUCCESS. Ultra1/color4alsoSUCCESS. AllregulatorlinksDROPaftereach. Evidence hardware/speaker-camera-20261102/{tele-probe*,tele-slot3*,ultra-probe*,color-probe*}; firstfailedattempt retained, nothardwarefailureproof. No stream/config/OIS/EEPROM/OTP/calibration command. Tools fixedcompilevariants, stockpowerseqs, hostABIfixturesPASS. GCprobe-onlymetadataaddrtype1/data2/regf0/24MHz; GCregistertablesSTILLunsupported/rejected. Parsernowreportsbounded320bytemoduleConfiguration cameraID. Neverinfer lensslotsfrommodulefilenames/order.
+
+SilentAFE native41496215362 source860e994 compiling; host/QEMU41496215906SUCCESS. PhonecurrentlyTWRP afterprobes, allcamera sensorsdown. Needwaitnativebuild/packagemilestone12withcorrecthash/source, temporarybootthenUSERreturn/readlog. DSP/APRalreadyPASS, AMPenable/PCM/HALandnativecameraframesNOTimplemented.
+
 ## 2026-11-02 native APR AUDIO SERVICES PASS; silent AFE SOURCE PREPARED
 
 USER returnedFB. VerifiedTWRPtemporaryboot1.647s. Readonly logs/adsp-apr11-20261102:378200bytes12flushnowrap SHA9896b382ee7057686d7c845ce508f965bcd2675f162761ba989fd5fbb709eff2. GLINKfeatures1 agreed, IPCRTR/APRbothwaysOPEN, QRTRHELLOnode5/8services, step11APRcorestate1after2ms/onequestion. Servicesreply80bytes success:AFEversion260000,ASM70002,ADM70000. Steps1..11DONE, DSPstayson/linkthreadalive, noADSPfailed/panic/RPMHtimeout found. Review.jsonprivate. PhoneLEFTTWRP, noAFE/PCM/AMPenable yet.

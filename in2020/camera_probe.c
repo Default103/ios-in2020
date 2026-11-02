@@ -1,4 +1,4 @@
-/* Recovery-only IN2020 main-sensor identity probe, not frame capture.
+/* Recovery-only IN2020 fixed-sensor identity probes, not frame capture.
  * ABI: OnePlusOSS SM8250 98719830 cam_defs/cam_req_mgr/cam_sensor headers.
  * Profile: this phone's semco_imx689 module; the MP alternative has identical
  * power/identity settings except the expected vendor nibble (0 or 1).
@@ -34,7 +34,52 @@ struct __attribute__((packed)) power_cmd { uint32_t count; uint8_t reserved, typ
     uint16_t more_reserved, sequence, unused; uint32_t value, high; };
 struct __attribute__((packed)) wait_cmd { int16_t delay, reserved; uint8_t op, type; uint16_t more_reserved; };
 struct step { uint16_t type; uint32_t value; uint16_t ms; };
-#ifdef IN2020_FRONT_PROBE
+#if defined(IN2020_COLOR_PROBE)
+/* Stock slot 4 / CSI4; GC5035 ID/power metadata only, no register tables. */
+#define SENSOR_NODE "/dev/v4l-subdev13"
+#define SENSOR_SLOT 4
+#define SENSOR_PHY 4
+#define SENSOR_ADDRESS 0x6e
+#define SENSOR_ID 0x5035
+#define SENSOR_ID_REG 0xf0
+#define SENSOR_ADDR_TYPE 1
+#define PROBE_OPTION "--probe-color"
+#define POWER_BYTES 256
+#define POWER_STEPS 10
+#define POWER_WAITS 7
+#define VARIANTS 1
+static const struct step up[]={{3,1,1},{2,1,1},{1,1,1},{0,24000000,1},{8,1,1}};
+static const struct step down[]={{8,0,1},{0,0,1},{1,0,0},{2,0,0},{3,0,0}};
+#elif defined(IN2020_ULTRA_PROBE)
+/* Stock moduleConfiguration slot 1 / measured CSI1; IMX586, no vendor subtype claim. */
+#define SENSOR_NODE "/dev/v4l-subdev12"
+#define SENSOR_SLOT 1
+#define SENSOR_PHY 1
+#define SENSOR_ADDRESS 0x20
+#define SENSOR_ID 0x586
+#define PROBE_OPTION "--probe-ultra"
+#define POWER_BYTES 408
+#define POWER_STEPS 16
+#define POWER_WAITS 11
+#define VARIANTS 1
+static const struct step up[]={{1,1,1},{6,1,1},{7,1,1},{10,1,0},{2,1,1},{3,1,1},{0,19200000,1},{8,1,1}};
+static const struct step down[]={{8,0,1},{0,0,1},{3,0,0},{2,0,0},{7,0,1},{6,0,1},{10,0,0},{1,0,0}};
+#elif defined(IN2020_TELE_PROBE)
+/* Stock moduleConfiguration slot 3 / measured CSI2; semco_s5k3m5. */
+#define SENSOR_NODE "/dev/v4l-subdev14"
+#define SENSOR_SLOT 3
+#define SENSOR_PHY 2
+#define SENSOR_ADDRESS 0x5a
+#define SENSOR_ID 0x30d5
+#define SENSOR_ID_REG 0
+#define PROBE_OPTION "--probe-tele"
+#define POWER_BYTES 280
+#define POWER_STEPS 10
+#define POWER_WAITS 10
+#define VARIANTS 1
+static const struct step up[]={{1,1,1},{2,1,1},{3,1,1},{0,19200000,1},{8,1,1}};
+static const struct step down[]={{8,0,1},{0,0,1},{3,0,1},{1,0,1},{2,0,1}};
+#elif defined(IN2020_FRONT_PROBE)
 /* Measured slot 2 / CSI3; stock truly_imx471 profile. */
 #define SENSOR_NODE "/dev/v4l-subdev15"
 #define SENSOR_SLOT 2
@@ -61,6 +106,12 @@ static const struct step down[]={{8,0,1},{0,0,1},{3,0,1},{2,0,1},{1,0,1}};
 #define VARIANTS 2
 static const struct step up[]={{1,1,1},{6,1,0},{2,1,1},{3,1,1},{0,19200000,1},{8,1,1}};
 static const struct step down[]={{8,0,1},{0,0,1},{3,0,0},{2,0,0},{1,0,0},{6,0,0}};
+#endif
+#ifndef SENSOR_ID_REG
+#define SENSOR_ID_REG 0x16
+#endif
+#ifndef SENSOR_ADDR_TYPE
+#define SENSOR_ADDR_TYPE 2
 #endif
 _Static_assert(sizeof(struct control)==24, "control ABI");
 _Static_assert(sizeof(struct alloc_cmd)==104, "allocation ABI");
@@ -90,7 +141,7 @@ static void make_packet(uint8_t buffer[4096], uint32_t handle, unsigned vendor)
     p->header.op=3;p->header.size=sizeof(*p);p->commands=2;
     p->desc[0]=(struct descriptor){(int32_t)handle,256,48,48,7,0};
     struct i2c_info info={SENSOR_ADDRESS,0,4,0}; /* standard I2C frequency */
-    struct probe sensor={2,2,0,1,0x16,SENSOR_ID,0xffff,SENSOR_SLOT,0};
+    struct probe sensor={2,SENSOR_ADDR_TYPE,0,1,SENSOR_ID_REG,SENSOR_ID,0xffff,SENSOR_SLOT,0};
     struct probe variant={1,2,0,1,SENSOR_ID==0x689?0x18:0,vendor,0xff,SENSOR_SLOT,0};
     memcpy(buffer+256,&info,sizeof(info));
     memcpy(buffer+264,&sensor,sizeof(sensor));
@@ -150,7 +201,7 @@ int main(int argc,char **argv)
     if(mapped==MAP_FAILED) perror("camera buffer mmap");
     else {
         make_packet(mapped,alloc.out.handle,vendor);
-        printf("SENSOR_PROBE slot=%u id=%#x reg=0x16 vendor=%u; original-kernel power up/match/down\n",SENSOR_SLOT,SENSOR_ID,vendor);fflush(stdout);
+        printf("SENSOR_PROBE slot=%u id=%#x reg=%#x vendor=%u; original-kernel power up/match/down\n",SENSOR_SLOT,SENSOR_ID,SENSOR_ID_REG,vendor);fflush(stdout);
         int rc=command(sensor,0x115,0,2,alloc.out.handle);
         int error=errno;printf("SENSOR_PROBE rc=%d errno=%d\n",rc,rc?error:0);
         result=rc?1:0;

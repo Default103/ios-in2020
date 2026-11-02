@@ -61,6 +61,13 @@ def inspect(data):
     name_symbol = symbols.get(root[4])
     require(name_symbol is not None and name_symbol['name'] == 'sensorName', 'invalid sensor name reference')
     name = payload(name_symbol).split(b'\0', 1)[0].decode('ascii', errors='strict')
+    configurations = [s for s in symbols.values() if s['name'] == 'moduleConfiguration']
+    require(len(configurations) <= 1, 'ambiguous module configuration')
+    camera_id = None
+    if configurations:
+        require(configurations[0]['size'] == 320, 'unsupported module configuration shape')
+        camera_id = struct.unpack_from('<Q', payload(configurations[0]))[0]
+        require(camera_id <= 31, 'invalid module camera id')
 
     def powers(count, ident):
         symbol = symbols.get(ident)
@@ -131,6 +138,7 @@ def inspect(data):
     return dict(status='OFFLINE_LAYOUT_INFERRED_NOT_SENSOR_PROBED',
                 sha256=hashlib.sha256(data).hexdigest(), sensor_name=name,
                 symbol_count=len(symbols), sections=len(sections),
+                module_configuration_camera_id=camera_id,
                 inferred_probe_fields=dict(slave_address_field=root[5], addr_type_field=root[6],
                                            data_type_field=root[7], id_register_field=root[8],
                                            expected_id_field=root[9], id_mask_field=root[10]),

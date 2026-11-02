@@ -209,3 +209,43 @@ After reviewing those results, the already-built step-11 image was temporarily
 booted (Sending/Booting OKAY, 0.907s). User was asked to run about two minutes
 and return to Fastboot. APR/GLINK/audio-service results are still pending that
 log. No amplifier enable, speaker playback or camera stream was attempted.
+
+## APR confirmed and remaining physical camera identities matched
+
+Step-11 read-only log: 378200 bytes, 12 flushes, no wrap, raw SHA256
+9896b382ee7057686d7c845ce508f965bcd2675f162761ba989fd5fbb709eff2.
+GLINK agreed features 1; IPCRTR and apr_audio_svc opened both ways. QRTR node
+5 reported eight services. APR core state was 1 after one question/2ms;
+service versions include AFE 0x260000, ASM 0x70002, ADM 0x70000. All eleven
+steps completed and the DSP/link remained on. No ADSP-step failure, kernel
+panic or RPMh timeout was found in this capture. This confirms communication,
+not speaker playback.
+
+Silent AFE source 860e994 is building as run 41496215362; host/check run
+41496215906 passed. The new milestone 12 uses the original tertiary MI2S
+packet shapes after proving both amplifiers off, with pin snapshot/restore
+and explicit STOP/clock-off response checks. Its hardware result is pending.
+
+Recovery probes now establish this mapping:
+
+| Slot | CSI PHY | Physical ID | Slave address field | Identity |
+| --- | --- | --- | --- | --- |
+| 0 | 0 | 0x0689 | 0x34 | IMX689 MP, main (earlier vendor check passed) |
+| 1 | 1 | 0x0586 | 0x20 | IMX586, ultra-wide (BG subtype not determined) |
+| 2 | 3 | 0x0471 | 0x20 | IMX471, front |
+| 3 | 2 | 0x30d5 | 0x5a | S5K3M5, telephoto |
+| 4 | 4 | 0x5035 | 0x6e | GC5035, color-filter camera |
+
+The first telephoto attempt incorrectly used slot 1 and NACKed; the kernel
+powered it down. Inspection of each stock module's 320-byte
+`moduleConfiguration` exposed camera IDs 1 for IMX586 and 3 for S5K3M5.
+The corrected telephoto slot 3 and ultra-wide slot 1 probes both matched,
+as did color-filter slot 4. Every successful run logged dropping regulator
+links afterward. Fixed packets use the stock module's power sequences;
+no configure/stream, EEPROM/OIS or OTP/calibration commands were submitted.
+The parser now reports the module camera ID to prevent name/order guesses.
+
+GC5035's ID/power metadata use byte addressing at ID register 0xf0, word
+data and a 24MHz clock. Only those metadata were used for its probe;
+its unsupported register-table width remains rejected by the V2 inspector.
+These five identity matches do not establish any XNU capture or ISP support.
