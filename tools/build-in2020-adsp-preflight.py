@@ -12,7 +12,8 @@ for name in ('workspace', 'kernel', 'out'):
     p.add_argument('--' + name, type=Path, required=True)
 for name in ('kernel-sha256', 'kernel-run', 'kernel-commit'):
     p.add_argument('--' + name, required=True)
-p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12, 13, 14), default=2)
+p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12, 13, 14, 15), default=2)
+p.add_argument("--audio-hal", type=Path)
 a = p.parse_args()
 r = a.workspace.resolve()
 digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -44,10 +45,31 @@ for item in json.loads(manifest):
     files.append(item)
 assert len(files) == 20
 speaker_profile = None
-if a.adsp_step == 14:
+if a.adsp_step >= 14:
     speaker_profile = runpy.run_path(str(Path(__file__).with_name('build-in2020-speaker-profile.py')))['build'](
         (r / 'firmware/in2020-audio-stock-20261102/tfa98xx.cnt').read_bytes())
     node.props.append(('tfa-speaker-ops', 0, speaker_profile))
+if a.adsp_step == 15:
+    assert a.audio_hal is not None
+    import plistlib
+    hal = a.audio_hal.resolve()
+    checks = {}
+    for line in (hal / 'SHA256SUMS').read_text().splitlines():
+        sha, name = line.split(maxsplit=1)
+        name = name.removeprefix('./')
+        assert '..' not in Path(name).parts
+        checks[name] = sha
+    for i, name in enumerate(('HakiosAudio.driver/HakiosAudio', 'HakiosAudio.driver/Info.plist')):
+        data = (hal / name).read_bytes()
+        assert digest(data) == checks[name] and 0 < len(data) <= 1024**2
+        if i == 0:
+            assert struct.unpack_from('<II', data) == (0xfeedfacf, 0x100000c)
+            assert struct.unpack_from('<I', data, 8)[0] == 0
+        else:
+            info = plistlib.loads(data)
+            assert info['CFBundleExecutable'] == 'HakiosAudio'
+            assert info['CFPlugInFactories']['7C3E5B0A-52D4-4F6B-9E0D-6B1A2D7F0C51'] == 'HakiosAudio_Create'
+        node.props.append(('hal-file' + str(i), 0, bytes.fromhex(checks[name]) + data))
 root.children.append(node)
 encoded = adt.serialize(root)
 assert len(encoded) < 32 * 1024**2
@@ -83,8 +105,8 @@ record = dict(status='BUILT_NOT_PHONE_TESTED', kernel_run=a.kernel_run,
               speaker_profile_sha256=digest(speaker_profile) if speaker_profile else None,
               dsp_start_enabled=a.adsp_step >= 7,
               amplifier_identity_probe_enabled=a.adsp_step >= 7,
-              speaker_output_implemented=False, camera_capture_implemented=False,
-              library_updater_present=False, temporary_boot_only=True)
+              speaker_output_implemented=a.adsp_step == 15, camera_capture_implemented=False,
+              audio_hal_installer_present=a.adsp_step == 15, library_updater_present=False, temporary_boot_only=True)
 (a.out / 'verification.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
 for path in (dt, payload, boot):
     path.chmod(0o444)

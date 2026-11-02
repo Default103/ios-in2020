@@ -1,3 +1,7 @@
+## 2026-11-03 AUDIBLE14 confirmed; real iOS audio integration in progress
+
+USER heard tones, cannot localize top/bottom. logs/audible14-20261103:369370 bytes,9 flush,no wrap,rawSHA81fe1eb45758b9269b5cd5eb0b792dae457318391d21113cb9b66221b1c14a9b. Both TFA9874 configured/PLL stable; TX+TFADSP feedback and existing-R25 calibration accepted. tone-command-accepted=1 amps-off=1 calibration-unchanged=1; RX/clock stopped, four pin restores verified. Acoustic output YES, which speakers UNKNOWN. PCM13 NOT boot tested. Phone left root TWRP after read-only capture. User requests real iOS output now; milestone15 continuous PCM+cdev+HAL+hash-gated installation pending checks/CI/device. No camera frame claim.
+
 ## 2026-11-03 AUDIBLE milestone14 BOOT ACCEPTED; USER sound feedback pending
 
 USER saysbuildcomplete; native41540681132SUCCESS/source02b199167c29ce1ad78fec8a7ea536a7b20488b8, host41540683538SUCCESS. ActualCI0127+speaker.ccompileverified,zeroFAILEDhunks. KernelSHA23069c3b9cae70da2ead49bcf1f2066d24f669521541f50db5aca23d4f8a5591 verifiedmanifest. Newactualimage builds/xnu-41540681132/in2020-audible-step14/in2020-ios16-adsp-step14-boot.img: SHA f87f78152523461fb0e4a2af954d4a8884aca76a55da4a0931c622597554d8be,35692544bytes,ADT17238124,602cmd,privateprofile940hash22ca7183eee18fe00ec26037569c55a5db8db0caf16b9b5f00caa28d820500dc,no libraryupdater. Thiskernel14containsTFAwrite/gates/finiteDTMF; PCM13notrun.

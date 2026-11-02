@@ -69,7 +69,7 @@ void
 hakios_sound_dsp_up(void)
 {
     extern void in2020_afe_probe(void);
-	printf("adsp: the audio services are up; the speakers' path is not here yet\n");
+	printf("adsp: the audio services are up; entering IN2020 audio path\n");
     in2020_afe_probe();
 }
 

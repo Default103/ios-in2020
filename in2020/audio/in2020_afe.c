@@ -13,6 +13,7 @@
 extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern bool in2020_tfa_confirm_off(void);
 extern bool in2020_pcm_probe(void);
+extern bool in2020_pcm_stream(void);
 extern void in2020_speaker_tone(void);
 void in2020_afe_probe(void);
 static vm_offset_t tlmm;
@@ -72,7 +73,7 @@ static void restore_pins(void) {
 void in2020_afe_probe(void) {
     unsigned requested=0;
     (void)PE_parse_boot_argn("in2020adsp",&requested,sizeof(requested));
-    if(requested!=12 && requested!=13 && requested!=14)return;
+    if(requested!=12 && requested!=13 && requested!=14 && requested!=15)return;
     printf("IN2020 AFE: milestone=%u %s\n",requested,
         requested==14 ? "audible speaker test requested" : "silent test; amplifiers remain off");
     if(!in2020_tfa_confirm_off())return;
@@ -97,6 +98,7 @@ void in2020_afe_probe(void) {
             changes[0],ones[0],changes[1],ones[1]);
         if(requested==13)printf("IN2020 AFE: silent PCM transport result=%d\n",in2020_pcm_probe());
         if(requested==14)in2020_speaker_tone();
+        if(requested==15)(void)in2020_pcm_stream();
     }
     bool stopped=!port_attempted || send(IN2020_AFE_STOP);
     bool clock_off=!clock_attempted || send(IN2020_AFE_CLOCK_OFF);

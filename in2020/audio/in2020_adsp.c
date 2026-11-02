@@ -3231,8 +3231,8 @@ in2020_adsp_init(void)
     thread_t thread;
     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
     if (!requested) return;
-    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13 && requested != 14) {
-        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13,14; rejected %u\n", requested);
+    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13 && requested != 14 && requested != 15) {
+        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13,14,15; rejected %u\n", requested);
         return;
     }
     adsp_memory = UMI_ADSP_MEMORY;

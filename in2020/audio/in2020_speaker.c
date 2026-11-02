@@ -100,6 +100,63 @@ static bool tone(unsigned ms,unsigned gain) {
     afe_put16(p+12,(uint16_t)gain);afe_put16(p+14,1);afe_put16(p+16,0x1004);
     return apr(0x10102,p,sizeof(p));
 }
+static bool stream_tx;
+bool in2020_speaker_start(void);
+void in2020_speaker_stop(void);
+bool in2020_speaker_alive(void);
+void in2020_speaker_stop(void) {
+    off();
+    if(stream_tx) { (void)tx(IN2020_AFE_STOP); stream_tx=false; }
+    bool unchanged=true;
+    for(unsigned d=0;d<2;++d) {
+        uint16_t m=0,r=0;
+        unchanged &= in2020_tfa_read16(0x34+d,0xf0,&m) && m==mtp[d] &&
+            in2020_tfa_read16(0x34+d,0xf5,&r) && r==r25[d];
+    }
+    printf("IN2020 SPEAKER: stream stopped amps-off=%d calibration-unchanged=%d\n",in2020_tfa_confirm_off(),unchanged);
+}
+bool in2020_speaker_alive(void) {
+    for(unsigned a=0x34;a<=0x35;++a) {
+        uint16_t status=0,state=0;
+        if(!in2020_tfa_read16(a,0x11,&status) || (status&0xc0)!=0xc0 ||
+           !in2020_tfa_read16(a,0x13,&state) || !(state&0x8000))return false;
+    }
+    return true;
+}
+bool in2020_speaker_start(void) {
+    DTEntry node;const void *value=NULL;unsigned n=0;
+    if(!in2020_tfa_confirm_off() || SecureDTLookupEntry(NULL,"/in2020-adsp",&node)!=kSuccess ||
+       SecureDTGetProperty(node,"tfa-speaker-ops",&value,&n)!=kSuccess ||
+       !in2020_speaker_profile(value,n)) {printf("IN2020 SPEAKER: profile/off gate failed\n");return false;}
+    const uint8_t *profile=value;
+    for(unsigned d=0;d<2;++d) {
+        uint16_t id=0;
+        if(!in2020_tfa_read16(0x34+d,3,&id) || id!=0x0c74 ||
+           !in2020_tfa_read16(0x34+d,0xf0,&mtp[d]) || (mtp[d]&3)!=3 ||
+           !in2020_tfa_read16(0x34+d,0xf5,&r25[d]) || r25[d]<=4000 || r25[d]>16000)return false;
+    }
+    for(unsigned d=0;d<2;++d)if(!configure(0x34+d,profile+24+d*460)) {
+        printf("IN2020 SPEAKER: configuration failed addr=%#x\n",0x34+d);goto fail;
+    }
+    if(!tx(IN2020_AFE_CONFIG))goto fail;
+    stream_tx=true;if(!tx(IN2020_AFE_START))goto fail;
+    uint8_t enable[4]={1,0,0,0};
+    if(!parameter(0x1005,0x1000b912,0x1000b920,enable,sizeof(enable)) || !calibrations())goto fail;
+    for(unsigned a=0x34;a<=0x35;++a)if(!bits(a,0,8,8))goto fail;
+    for(unsigned d=0;d<2;++d) {
+        bool operating=false;
+        for(unsigned i=0;i<50;++i) {
+            uint16_t s=0;if(!in2020_tfa_read16(0x34+d,0x13,&s))goto fail;
+            if(s&0x8000) {operating=true;break;}
+            delay_for_interval(1,NSEC_PER_MSEC);
+        }
+        if(!operating) {printf("IN2020 SPEAKER: operating-state timeout addr=%#x\n",0x34+d);goto fail;}
+    }
+    printf("IN2020 SPEAKER: protected PCM output enabled\n");
+    return true;
+fail:
+    in2020_speaker_stop();return false;
+}
 void in2020_speaker_tone(void) {
     DTEntry node;const void *value=NULL;unsigned n=0;bool tx_attempted=false,played=false;
     printf("IN2020 SPEAKER: finite low-level audible test; no iOS audio bridge\n");

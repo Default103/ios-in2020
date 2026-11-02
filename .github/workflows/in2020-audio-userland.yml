@@ -1,0 +1,32 @@
+name: IN2020 iOS audio HAL
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build signed arm64 iOS AudioServerPlugIn
+        run: |
+          set -eux
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          BUNDLE=out/HakiosAudio.driver
+          mkdir -p "$BUNDLE"
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
+            -O2 -Wall -Wextra -Werror -bundle -framework CoreFoundation -framework CoreAudioTypes \
+            -o "$BUNDLE/HakiosAudio" userland/audio/audio_plugin.c
+          cp userland/audio/Info.plist "$BUNDLE/Info.plist"
+          codesign -s - -f "$BUNDLE"
+          codesign --verify --strict "$BUNDLE"
+          file "$BUNDLE/HakiosAudio"
+          nm -gU "$BUNDLE/HakiosAudio" | grep _HakiosAudio_Create
+          otool -L "$BUNDLE/HakiosAudio"
+          cd out
+          find . -type f ! -name SHA256SUMS | sort | xargs shasum -a 256 > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: in2020-audio-hal
+          path: out/

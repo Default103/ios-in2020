@@ -1,0 +1,429 @@
+--- a/bsd/dev/in2020_adsp.c
++++ b/bsd/dev/in2020_adsp.c
+@@ -3231,8 +3231,8 @@
+     thread_t thread;
+     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
+     if (!requested) return;
+-    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13 && requested != 14) {
+-        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13,14; rejected %u\n", requested);
++    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13 && requested != 14 && requested != 15) {
++        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13,14,15; rejected %u\n", requested);
+         return;
+     }
+     adsp_memory = UMI_ADSP_MEMORY;
+--- a/bsd/dev/in2020_afe.c
++++ b/bsd/dev/in2020_afe.c
+@@ -13,6 +13,7 @@
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern bool in2020_tfa_confirm_off(void);
+ extern bool in2020_pcm_probe(void);
++extern bool in2020_pcm_stream(void);
+ extern void in2020_speaker_tone(void);
+ void in2020_afe_probe(void);
+ static vm_offset_t tlmm;
+@@ -72,7 +73,7 @@
+ void in2020_afe_probe(void) {
+     unsigned requested=0;
+     (void)PE_parse_boot_argn("in2020adsp",&requested,sizeof(requested));
+-    if(requested!=12 && requested!=13 && requested!=14)return;
++    if(requested!=12 && requested!=13 && requested!=14 && requested!=15)return;
+     printf("IN2020 AFE: milestone=%u %s\n",requested,
+         requested==14 ? "audible speaker test requested" : "silent test; amplifiers remain off");
+     if(!in2020_tfa_confirm_off())return;
+@@ -97,6 +98,7 @@
+             changes[0],ones[0],changes[1],ones[1]);
+         if(requested==13)printf("IN2020 AFE: silent PCM transport result=%d\n",in2020_pcm_probe());
+         if(requested==14)in2020_speaker_tone();
++        if(requested==15)(void)in2020_pcm_stream();
+     }
+     bool stopped=!port_attempted || send(IN2020_AFE_STOP);
+     bool clock_off=!clock_attempted || send(IN2020_AFE_CLOCK_OFF);
+--- a/bsd/dev/in2020_audio_glue.c
++++ b/bsd/dev/in2020_audio_glue.c
+@@ -69,7 +69,7 @@
+ hakios_sound_dsp_up(void)
+ {
+     extern void in2020_afe_probe(void);
+-	printf("adsp: the audio services are up; the speakers' path is not here yet\n");
++	printf("adsp: the audio services are up; entering IN2020 audio path\n");
+     in2020_afe_probe();
+ }
+ 
+--- /dev/null
++++ b/bsd/dev/in2020_audio_user.c
+@@ -0,0 +1,190 @@
++/* IN2020 iOS speaker transport. APSL 2.0, see LICENSE.APSL.
++ * Nonblocking bounded S16LE 48kHz stereo queue; never expose amplifier registers.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/conf.h>
++#include <sys/errno.h>
++#include <sys/proc.h>
++#include <sys/uio.h>
++#include <kern/locks.h>
++#include <miscfs/devfs/devfs.h>
++#include <pexpert/pexpert.h>
++#include "hakios.audio.h"
++#define FRAMES 8192u
++static LCK_GRP_DECLARE(audio_group,"in2020-audio");
++static LCK_MTX_DECLARE(audio_mutex,&audio_group);
++static int16_t ring[FRAMES*2];
++static unsigned read_at,write_at,queued,gain=8246; /* initial -18dB ceiling */
++static bool ready,muted;
++static uint64_t received,dropped,consumed;
++void in2020_audio_ready(bool);
++unsigned in2020_audio_take(int16_t *,unsigned);
++void in2020_audio_install(void);
++void in2020_audio_ready(bool value) {
++    lck_mtx_lock(&audio_mutex);ready=value;
++    read_at=write_at=queued=0;
++    lck_mtx_unlock(&audio_mutex);
++    printf("IN2020 AUDIO: PCM ready=%d rate=48000 stereo S16LE ceiling=-18dB\n",value);
++}
++unsigned in2020_audio_take(int16_t *dest,unsigned count) {
++    lck_mtx_lock(&audio_mutex);
++    unsigned take=MIN(count,queued);
++    for(unsigned i=0;i<take;++i) {
++        for(unsigned c=0;c<2;++c)dest[2*i+c]=muted ? 0 :
++            (int16_t)((int32_t)ring[2*read_at+c]*(int32_t)gain/65536);
++        read_at=(read_at+1)%FRAMES;
++    }
++    queued-=take;consumed+=take;
++    lck_mtx_unlock(&audio_mutex);
++    bzero(dest+2*take,(count-take)*4);
++    return take;
++}
++static int audio_open(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {return 0;}
++static int audio_close(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {return 0;}
++static int audio_write(__unused dev_t dev,struct uio *uio,__unused int flags) {
++    int16_t data[1024*2];
++    if(uio_resid(uio)%4)return EINVAL;
++    while(uio_resid(uio)) {
++        unsigned bytes=(unsigned)MIN(uio_resid(uio),(user_ssize_t)sizeof(data));
++        int error=uiomove((caddr_t)data,(int)bytes,uio);if(error)return error;
++        unsigned frames=bytes/4;
++        lck_mtx_lock(&audio_mutex);
++        unsigned take=ready ? MIN(frames,FRAMES-queued) : 0;
++        for(unsigned i=0;i<take;++i) {
++            ring[write_at*2]=data[i*2];ring[write_at*2+1]=data[i*2+1];write_at=(write_at+1)%FRAMES;
++        }
++        queued+=take;received+=frames;dropped+=frames-take;
++        bool report=received==frames || received/480000!=(received-frames)/480000;
++        uint64_t r=received,d=dropped,c=consumed;
++        lck_mtx_unlock(&audio_mutex);
++        if(report)printf("IN2020 AUDIO: frames received=%llu consumed=%llu dropped=%llu\n",r,c,d);
++    }
++    return 0;
++}
++static int audio_ioctl(__unused dev_t d,u_long cmd,caddr_t data,__unused int f,__unused struct proc *p) {
++    if(cmd!=HAKIOS_AUDIO_SET_VOLUME)return ENOTTY;
++    const struct hakios_audio_volume *v=(const void *)data;
++    unsigned below=MIN(v->below,720u),level=8246;
++    /* Integer attenuation, 1/8dB steps. Top is always the -18dB bring-up ceiling. */
++    for(unsigned i=0;i<below;++i)level=(level*64599u)/65536u;
++    lck_mtx_lock(&audio_mutex);gain=level;muted=v->muted!=0;lck_mtx_unlock(&audio_mutex);
++    return 0;
++}
++static const struct cdevsw audio_cdevsw={
++    .d_open=audio_open,.d_close=audio_close,.d_read=eno_rdwrt,.d_write=audio_write,
++    .d_ioctl=audio_ioctl,.d_stop=eno_stop,.d_reset=eno_reset,.d_select=eno_select,
++    .d_mmap=eno_mmap,.d_strategy=eno_strat,.d_type=0
++};
++
++#include <sys/fcntl.h>
++#include <sys/vnode.h>
++#include <kern/kalloc.h>
++#include <corecrypto/ccdigest.h>
++#include <corecrypto/ccsha2.h>
++#include <pexpert/device_tree.h>
++extern int in2020_kernel_mkdir(const char *);
++extern int in2020_kernel_rename(const char *,const char *);
++#define LIMIT (1024u*1024u)
++static void digest(const void *bytes,size_t n,uint8_t out[32]) {
++ const struct ccdigest_info *di=&ccsha256_ltc_di;
++ ccdigest_ctx_decl(CCSHA256_STATE_SIZE,CCSHA256_BLOCK_SIZE,h);
++ ccdigest_init(di,h);ccdigest_update(di,h,n,bytes);ccdigest_final(di,h,out);
++}
++static int read_file(const char *path,uint8_t **data,size_t *size) {
++ vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;struct vnode_attr va;int err,resid=0;
++ *data=NULL;*size=0;err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);if(err)return err;
++ VATTR_INIT(&va);VATTR_WANTED(&va,va_data_size);VATTR_WANTED(&va,va_uid);
++ err=vnode_getattr(vp,&va,ctx);
++ if(!err && (vnode_vtype(vp)!=VREG || va.va_uid!=0 || va.va_data_size==0 || va.va_data_size>LIMIT))err=EINVAL;
++ if(!err) {
++  *size=(size_t)va.va_data_size;*data=kalloc_data(*size,Z_WAITOK);
++  if(!*data)err=ENOMEM;
++  else err=vn_rdwr(UIO_READ,vp,(caddr_t)*data,(int)*size,0,UIO_SYSSPACE,IO_NOAUTH,
++    vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++  if(!err && resid)err=EIO;
++ }
++ (void)vnode_close(vp,FREAD,ctx);
++ if(err && *data){kfree_data(*data,*size);*data=NULL;}
++ return err;
++}
++static int hash_file(const char *path,uint8_t out[32]) {
++ uint8_t *data;size_t n;int err=read_file(path,&data,&n);
++ if(!err){digest(data,n,out);kfree_data(data,n);}return err;
++}
++static int same_file(const char *path,const uint8_t hash[32]) {
++ uint8_t got[32];int err=hash_file(path,got);return err?err:memcmp(got,hash,32)?EINVAL:0;
++}
++/* Existing staging/backup names are reused only if their full digest matches.
++ * Never truncate an existing object (including a possible hard link). */
++static int create_file(const char *path,const uint8_t *bytes,size_t n,const uint8_t expected[32]) {
++ uint8_t got[32];int err=hash_file(path,got);
++ if(!err)return memcmp(got,expected,32)?EINVAL:0;
++ if(err!=ENOENT)return err;
++ vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;int resid=0;
++ err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0755,0,&vp,ctx);if(err)return err;
++ err=vn_rdwr(UIO_WRITE,vp,(caddr_t)(uintptr_t)bytes,(int)n,0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,
++  vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++ (void)vnode_close(vp,FWRITE,ctx);if(!err && resid)err=EIO;
++ return err?err:same_file(path,expected);
++}
++static void stage_name(char *out,size_t cap,const char *path,const uint8_t hash[32],const char *kind) {
++ snprintf(out,cap,"%s.in2020-%s-%02x%02x%02x%02x%02x%02x%02x%02x",path,kind,
++  hash[0],hash[1],hash[2],hash[3],hash[4],hash[5],hash[6],hash[7]);
++}
++
++static int directory(const char *path,bool create) {
++    vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;
++    int err=vnode_open(path,FREAD|O_NOFOLLOW|O_DIRECTORY,0,0,&vp,ctx);
++    if(err==ENOENT && create) {
++        err=in2020_kernel_mkdir(path);if(err)return err;
++        err=vnode_open(path,FREAD|O_NOFOLLOW|O_DIRECTORY,0,0,&vp,ctx);
++    }
++    if(err)return err;
++    struct vnode_attr va;VATTR_INIT(&va);VATTR_WANTED(&va,va_uid);VATTR_WANTED(&va,va_mode);
++    err=vnode_getattr(vp,&va,ctx);
++    if(!err && (vnode_vtype(vp)!=VDIR || va.va_uid || (va.va_mode&022)))err=EPERM;
++    (void)vnode_close(vp,FREAD,ctx);return err;
++}
++static int install_plugin(DTEntry node) {
++    const char *base="/System/Library/Audio/Plug-Ins/HAL";
++    const char *bundle="/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver";
++    const char *paths[2]={"/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/HakiosAudio",
++        "/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/Info.plist"};
++    const uint8_t *bytes[2];unsigned sizes[2];
++    /* No mutation until both package hashes and every existing file are validated. */
++    int err=directory(base,false);if(err)return err;
++    for(unsigned i=0;i<2;++i) {
++        const void *prop=NULL;char key[16];unsigned n=0;uint8_t hash[32];
++        snprintf(key,sizeof(key),"hal-file%u",i);
++        if(SecureDTGetProperty(node,key,&prop,&n)!=kSuccess || n<=32 || n-32>LIMIT)return EINVAL;
++        bytes[i]=prop;sizes[i]=n-32;digest(bytes[i]+32,sizes[i],hash);
++        if(memcmp(hash,bytes[i],32))return EINVAL;
++        err=hash_file(paths[i],hash);
++        if(err!=ENOENT && err)return err;
++        if(!err && memcmp(hash,bytes[i],32))return EPERM;
++    }
++    err=directory(bundle,true);if(err)return err;
++    for(unsigned i=0;i<2;++i) {
++        char stage[192];stage_name(stage,sizeof(stage),paths[i],bytes[i],"stage");
++        err=create_file(stage,bytes[i]+32,sizes[i],bytes[i]);if(err)return err;
++        /* Existing matching final files can be left intact; never replace other bytes. */
++        err=same_file(paths[i],bytes[i]);
++        if(err==ENOENT)err=in2020_kernel_rename(stage,paths[i]);
++        if(err)return err;
++        err=same_file(paths[i],bytes[i]);if(err)return err;
++    }
++    return 0;
++}
++void in2020_audio_install(void) {
++    unsigned step=0;(void)PE_parse_boot_argn("in2020adsp",&step,sizeof(step));
++    if(step!=15)return;
++    int major=cdevsw_add(-1,&audio_cdevsw);
++    if(major<0 || !devfs_make_node(makedev(major,0),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"hakios-audio")) {
++        printf("IN2020 AUDIO: cannot create character device\n");return;
++    }
++    DTEntry node;
++    if(SecureDTLookupEntry(NULL,"/in2020-adsp",&node)!=kSuccess)return;
++    int err=install_plugin(node);
++    printf("IN2020 AUDIO: HAL installation result=%d; device /dev/hakios-audio\n",err);
++}
+--- a/bsd/dev/in2020_pcm.c
++++ b/bsd/dev/in2020_pcm.c
+@@ -15,6 +15,12 @@
+ extern uint64_t kvtophys(vm_offset_t);
+ extern bool in2020_tfa_confirm_off(void);
+ bool in2020_pcm_probe(void);
++bool in2020_pcm_stream(void);
++extern bool in2020_speaker_start(void);
++extern void in2020_speaker_stop(void);
++extern bool in2020_speaker_alive(void);
++extern unsigned in2020_audio_take(int16_t *,unsigned);
++extern void in2020_audio_ready(bool);
+ #define AUDIO_IOVA 0x10000000u
+ #define AUDIO_SID 0x1801u
+ #define PERIOD_BYTES 3840u
+@@ -143,10 +149,10 @@
+     __atomic_fetch_and(&pending,~(1u<<slot),__ATOMIC_RELEASE);
+     __atomic_fetch_add(&done,1,__ATOMIC_RELEASE);return true;
+ }
+-bool in2020_pcm_probe(void) {
++static bool pcm_run(bool continuous) {
+     static bool attempted;if(attempted)return false;attempted=true;
+     if(!in2020_tfa_confirm_off())return false;
+-    printf("IN2020 PCM: silent 64-period transport test; no amplifier enable\n");
++    printf("IN2020 PCM: %s\n",continuous ? "iOS continuous PCM requested" : "silent 64-period transport test");
+     if(!memory_on()) {printf("IN2020 PCM: memory unavailable; quarantine=%d; no ASM session\n",quarantined);return false;}
+     struct hakios_apr_answer a={0};bool mapped=false,copp_open=false,stream_open=false;
+     bool uncertain=false,success=false;uint16_t copp=0;
+@@ -164,11 +170,32 @@
+        !command(7,0x101,0x10d98,format,sizeof(format),0,NULL))goto cleanup;
+     hakios_adsp_apr_events(events);
+     if(!command(7,0x101,0x10daa,run,sizeof(run),0,NULL))goto cleanup;
+-    unsigned submitted=0;
+-    for(unsigned ms=0;ms<4000 && __atomic_load_n(&done,__ATOMIC_ACQUIRE)<64;++ms) {
++    unsigned submitted=0,last_done=0,stalled=0;bool amplifiers=false;
++    in2020_audio_ready(continuous);
++    for(unsigned ms=0;continuous || (ms<4000 && __atomic_load_n(&done,__ATOMIC_ACQUIRE)<64);++ms) {
+         if(__atomic_load_n(&errors,__ATOMIC_ACQUIRE))break;
+-        for(unsigned i=0;i<8 && submitted<64;++i) {
++        unsigned completed_now=__atomic_load_n(&done,__ATOMIC_ACQUIRE);
++        if(continuous) {
++            stalled=completed_now==last_done ? stalled+1 : 0;last_done=completed_now;
++            if(stalled>2000 || rd(cb,0x58) || rd(smmu,0x48))break;
++            /* Prove real DMA completions before enabling the protected amplifiers. */
++            if(!amplifiers && completed_now>=8) {
++                if(!in2020_speaker_start())break;
++                amplifiers=true;
++            }
++            if(amplifiers && ms%1000==0 && !in2020_speaker_alive())break;
++            if(ms%30000==0)printf("IN2020 PCM: live submitted=%u done=%u errors=%u underflows=%u amps=%d\n",
++                submitted,completed_now,__atomic_load_n(&errors,__ATOMIC_ACQUIRE),
++                __atomic_load_n(&underflows,__ATOMIC_ACQUIRE),amplifiers);
++        }
++        for(unsigned i=0;i<8 && (continuous || submitted<64);++i) {
+             if(__atomic_load_n(&pending,__ATOMIC_ACQUIRE)&(1u<<i))continue;
++            if(continuous) {
++                (void)in2020_audio_take((int16_t *)(buffer+i*4096),PERIOD_BYTES/4);
++                for(vm_offset_t p=buffer+i*4096;p<buffer+i*4096+PERIOD_BYTES;p+=64)
++                    __asm__ volatile("dc cvac,%0"::"r"(p):"memory");
++                __asm__ volatile("dsb sy" ::: "memory");
++            }
+             uint32_t w[8]={AUDIO_IOVA+i*4096,1,handle,PERIOD_BYTES,submitted,0,0,0};
+             uint32_t token=0x80000000u|((submitted+1)<<3)|i;
+             __atomic_store_n(&tokens[i],token,__ATOMIC_RELEASE);
+@@ -187,6 +214,8 @@
+     printf("IN2020 PCM: submitted=%u done=%u errors=%u pending=%#x underflows=%u FSR=%#x global=%#x success=%d\n",
+         submitted,completed,failed,outstanding,__atomic_load_n(&underflows,__ATOMIC_ACQUIRE),rd(cb,0x58),rd(smmu,0x48),success);
+ cleanup:
++    in2020_audio_ready(false);
++    if(continuous)in2020_speaker_stop();
+     if(stream_open && !command(7,0x101,0x10bcd,NULL,0,0,NULL))uncertain=true;
+     if(copp_open && !command(8,copp,0x10327,NULL,0,0,NULL))uncertain=true;
+     if(mapped && !uncertain && !command(7,0,0x10d94,&handle,sizeof(handle),0,NULL))uncertain=true;
+@@ -199,3 +228,6 @@
+         uncertain,quarantined,amps_off);
+     return success && !uncertain && amps_off;
+ }
++
++bool in2020_pcm_probe(void) {return pcm_run(false);}
++bool in2020_pcm_stream(void) {return pcm_run(true);}
+--- a/bsd/dev/in2020_speaker.c
++++ b/bsd/dev/in2020_speaker.c
+@@ -100,6 +100,63 @@
+     afe_put16(p+12,(uint16_t)gain);afe_put16(p+14,1);afe_put16(p+16,0x1004);
+     return apr(0x10102,p,sizeof(p));
+ }
++static bool stream_tx;
++bool in2020_speaker_start(void);
++void in2020_speaker_stop(void);
++bool in2020_speaker_alive(void);
++void in2020_speaker_stop(void) {
++    off();
++    if(stream_tx) { (void)tx(IN2020_AFE_STOP); stream_tx=false; }
++    bool unchanged=true;
++    for(unsigned d=0;d<2;++d) {
++        uint16_t m=0,r=0;
++        unchanged &= in2020_tfa_read16(0x34+d,0xf0,&m) && m==mtp[d] &&
++            in2020_tfa_read16(0x34+d,0xf5,&r) && r==r25[d];
++    }
++    printf("IN2020 SPEAKER: stream stopped amps-off=%d calibration-unchanged=%d\n",in2020_tfa_confirm_off(),unchanged);
++}
++bool in2020_speaker_alive(void) {
++    for(unsigned a=0x34;a<=0x35;++a) {
++        uint16_t status=0,state=0;
++        if(!in2020_tfa_read16(a,0x11,&status) || (status&0xc0)!=0xc0 ||
++           !in2020_tfa_read16(a,0x13,&state) || !(state&0x8000))return false;
++    }
++    return true;
++}
++bool in2020_speaker_start(void) {
++    DTEntry node;const void *value=NULL;unsigned n=0;
++    if(!in2020_tfa_confirm_off() || SecureDTLookupEntry(NULL,"/in2020-adsp",&node)!=kSuccess ||
++       SecureDTGetProperty(node,"tfa-speaker-ops",&value,&n)!=kSuccess ||
++       !in2020_speaker_profile(value,n)) {printf("IN2020 SPEAKER: profile/off gate failed\n");return false;}
++    const uint8_t *profile=value;
++    for(unsigned d=0;d<2;++d) {
++        uint16_t id=0;
++        if(!in2020_tfa_read16(0x34+d,3,&id) || id!=0x0c74 ||
++           !in2020_tfa_read16(0x34+d,0xf0,&mtp[d]) || (mtp[d]&3)!=3 ||
++           !in2020_tfa_read16(0x34+d,0xf5,&r25[d]) || r25[d]<=4000 || r25[d]>16000)return false;
++    }
++    for(unsigned d=0;d<2;++d)if(!configure(0x34+d,profile+24+d*460)) {
++        printf("IN2020 SPEAKER: configuration failed addr=%#x\n",0x34+d);goto fail;
++    }
++    if(!tx(IN2020_AFE_CONFIG))goto fail;
++    stream_tx=true;if(!tx(IN2020_AFE_START))goto fail;
++    uint8_t enable[4]={1,0,0,0};
++    if(!parameter(0x1005,0x1000b912,0x1000b920,enable,sizeof(enable)) || !calibrations())goto fail;
++    for(unsigned a=0x34;a<=0x35;++a)if(!bits(a,0,8,8))goto fail;
++    for(unsigned d=0;d<2;++d) {
++        bool operating=false;
++        for(unsigned i=0;i<50;++i) {
++            uint16_t s=0;if(!in2020_tfa_read16(0x34+d,0x13,&s))goto fail;
++            if(s&0x8000) {operating=true;break;}
++            delay_for_interval(1,NSEC_PER_MSEC);
++        }
++        if(!operating) {printf("IN2020 SPEAKER: operating-state timeout addr=%#x\n",0x34+d);goto fail;}
++    }
++    printf("IN2020 SPEAKER: protected PCM output enabled\n");
++    return true;
++fail:
++    in2020_speaker_stop();return false;
++}
+ void in2020_speaker_tone(void) {
+     DTEntry node;const void *value=NULL;unsigned n=0;bool tx_attempted=false,played=false;
+     printf("IN2020 SPEAKER: finite low-level audible test; no iOS audio bridge\n");
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -120,6 +120,7 @@
+ bsd/dev/in2020_afe.c		standard
+ bsd/dev/in2020_pcm.c		standard
+ bsd/dev/in2020_speaker.c		standard
++bsd/dev/in2020_audio_user.c		standard
+ bsd/dev/mem.c				standard
+ bsd/dev/munge.c 			optional config_requires_u32_munging
+ bsd/dev/unix_startup.c			standard
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1101,6 +1101,8 @@
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ 	extern void in2020_update_install(void);
+ 	in2020_update_install();
++	extern void in2020_audio_install(void);
++	in2020_audio_install();
+ #endif
+ 	load_init_program(p);
+ 	lock_trace = 1;
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -9853,6 +9853,15 @@
+  *                !0                      Not success
+  *
+  */
++int in2020_kernel_mkdir(const char *);
++int in2020_kernel_mkdir(const char *path)
++{
++	struct vnode_attr va;
++	VATTR_INIT(&va);VATTR_SET(&va,va_mode,0755);
++	VATTR_SET(&va,va_uid,0);VATTR_SET(&va,va_gid,0);
++	return mkdir1at(vfs_context_kernel(),CAST_USER_ADDR_T(path),&va,AT_FDCWD,UIO_SYSSPACE);
++}
++
+ int
+ mkdir_extended(proc_t p, struct mkdir_extended_args *uap, __unused int32_t *retval)
+ {

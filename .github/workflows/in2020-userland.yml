@@ -19,6 +19,7 @@ on:
     branches: [in2020-current]
     paths:
       - "userland/**"
+      - "!userland/audio/**"
       - ".github/workflows/in2020-userland.yml"
 
 permissions:

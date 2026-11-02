@@ -15,6 +15,12 @@ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern uint64_t kvtophys(vm_offset_t);
 extern bool in2020_tfa_confirm_off(void);
 bool in2020_pcm_probe(void);
+bool in2020_pcm_stream(void);
+extern bool in2020_speaker_start(void);
+extern void in2020_speaker_stop(void);
+extern bool in2020_speaker_alive(void);
+extern unsigned in2020_audio_take(int16_t *,unsigned);
+extern void in2020_audio_ready(bool);
 #define AUDIO_IOVA 0x10000000u
 #define AUDIO_SID 0x1801u
 #define PERIOD_BYTES 3840u
@@ -143,10 +149,10 @@ static bool events(uint8_t service,uint16_t port,uint32_t op,uint32_t token,cons
     __atomic_fetch_and(&pending,~(1u<<slot),__ATOMIC_RELEASE);
     __atomic_fetch_add(&done,1,__ATOMIC_RELEASE);return true;
 }
-bool in2020_pcm_probe(void) {
+static bool pcm_run(bool continuous) {
     static bool attempted;if(attempted)return false;attempted=true;
     if(!in2020_tfa_confirm_off())return false;
-    printf("IN2020 PCM: silent 64-period transport test; no amplifier enable\n");
+    printf("IN2020 PCM: %s\n",continuous ? "iOS continuous PCM requested" : "silent 64-period transport test");
     if(!memory_on()) {printf("IN2020 PCM: memory unavailable; quarantine=%d; no ASM session\n",quarantined);return false;}
     struct hakios_apr_answer a={0};bool mapped=false,copp_open=false,stream_open=false;
     bool uncertain=false,success=false;uint16_t copp=0;
@@ -164,11 +170,32 @@ bool in2020_pcm_probe(void) {
        !command(7,0x101,0x10d98,format,sizeof(format),0,NULL))goto cleanup;
     hakios_adsp_apr_events(events);
     if(!command(7,0x101,0x10daa,run,sizeof(run),0,NULL))goto cleanup;
-    unsigned submitted=0;
-    for(unsigned ms=0;ms<4000 && __atomic_load_n(&done,__ATOMIC_ACQUIRE)<64;++ms) {
+    unsigned submitted=0,last_done=0,stalled=0;bool amplifiers=false;
+    in2020_audio_ready(continuous);
+    for(unsigned ms=0;continuous || (ms<4000 && __atomic_load_n(&done,__ATOMIC_ACQUIRE)<64);++ms) {
         if(__atomic_load_n(&errors,__ATOMIC_ACQUIRE))break;
-        for(unsigned i=0;i<8 && submitted<64;++i) {
+        unsigned completed_now=__atomic_load_n(&done,__ATOMIC_ACQUIRE);
+        if(continuous) {
+            stalled=completed_now==last_done ? stalled+1 : 0;last_done=completed_now;
+            if(stalled>2000 || rd(cb,0x58) || rd(smmu,0x48))break;
+            /* Prove real DMA completions before enabling the protected amplifiers. */
+            if(!amplifiers && completed_now>=8) {
+                if(!in2020_speaker_start())break;
+                amplifiers=true;
+            }
+            if(amplifiers && ms%1000==0 && !in2020_speaker_alive())break;
+            if(ms%30000==0)printf("IN2020 PCM: live submitted=%u done=%u errors=%u underflows=%u amps=%d\n",
+                submitted,completed_now,__atomic_load_n(&errors,__ATOMIC_ACQUIRE),
+                __atomic_load_n(&underflows,__ATOMIC_ACQUIRE),amplifiers);
+        }
+        for(unsigned i=0;i<8 && (continuous || submitted<64);++i) {
             if(__atomic_load_n(&pending,__ATOMIC_ACQUIRE)&(1u<<i))continue;
+            if(continuous) {
+                (void)in2020_audio_take((int16_t *)(buffer+i*4096),PERIOD_BYTES/4);
+                for(vm_offset_t p=buffer+i*4096;p<buffer+i*4096+PERIOD_BYTES;p+=64)
+                    __asm__ volatile("dc cvac,%0"::"r"(p):"memory");
+                __asm__ volatile("dsb sy" ::: "memory");
+            }
             uint32_t w[8]={AUDIO_IOVA+i*4096,1,handle,PERIOD_BYTES,submitted,0,0,0};
             uint32_t token=0x80000000u|((submitted+1)<<3)|i;
             __atomic_store_n(&tokens[i],token,__ATOMIC_RELEASE);
@@ -187,6 +214,8 @@ bool in2020_pcm_probe(void) {
     printf("IN2020 PCM: submitted=%u done=%u errors=%u pending=%#x underflows=%u FSR=%#x global=%#x success=%d\n",
         submitted,completed,failed,outstanding,__atomic_load_n(&underflows,__ATOMIC_ACQUIRE),rd(cb,0x58),rd(smmu,0x48),success);
 cleanup:
+    in2020_audio_ready(false);
+    if(continuous)in2020_speaker_stop();
     if(stream_open && !command(7,0x101,0x10bcd,NULL,0,0,NULL))uncertain=true;
     if(copp_open && !command(8,copp,0x10327,NULL,0,0,NULL))uncertain=true;
     if(mapped && !uncertain && !command(7,0,0x10d94,&handle,sizeof(handle),0,NULL))uncertain=true;
@@ -199,3 +228,6 @@ cleanup:
         uncertain,quarantined,amps_off);
     return success && !uncertain && amps_off;
 }
+
+bool in2020_pcm_probe(void) {return pcm_run(false);}
+bool in2020_pcm_stream(void) {return pcm_run(true);}
