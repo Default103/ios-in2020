@@ -1,3 +1,9 @@
+## 2026-11-02 requested direct keys retest; USB unavailable
+
+USER says phone bootloader, requests direct boot after build; may leave and cannot manually return to bootloader/TWRP. Explicitly authorizes operations without additional approval; camera adaptation is conditional on agent being able to return phone to recovery/bootloader. Existing kernel41443746692 and keys-on image are already built/verified (details below), no rebuild required.
+
+Two fresh elevated fastboot/ADB inventories returned NO DEVICES. Reconnect request sent asynchronously, awaiting user. NO new boot/reboot/flash issued this turn. Prior accepted boot below is earlier, not evidence this request was executed. Current keys image sweetusb=0; no verified iOS host-control or automatic return path found. Shim contains old Redmi reset constants but those are NOT an available running-XNU control channel and must not be used as proof. Told user cannot guarantee remote return; do not begin camera device work under unsatisfied condition. Next: once unique Kona Fastboot appears, recheck image SHA70f0d1ae3a4b6c53508cf414887b361c0102024cbaa1606a21fdcdff05833c33 and downloadsize, temporary fastboot boot keys-on, request power/volume observations. Do not issue flashing commands.
+
 ## 2026-11-02 KEYS TEMPORARY BOOT ACCEPTED; visual test pending; audio INCOMPLETE
 
 Kernel41443746692SUCCESS18m59s/source836f5f6b688db22c5032cc1de364bcb32270ae26; SHA4ba3f5fe6c64445066241c33c57f54694e9fe46a73b3a8c96f8fdd2ed7b989dc verifiedfromdownloadmanifest. Host/QEMU41443511757SUCCESS; QEMUpriorv4kernelnonewPMICtest. NewactualdriverlocalXNUheaderplainARM64compilePASS5160byteobj (inheritedNDEBUGwarningonly).
