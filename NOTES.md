@@ -1,3 +1,7 @@
+## 2026-11-03 audio HAL linker correction
+
+USER reports41544550154failure. Actual log: iPhoneOS18.5/Xcode16.4 compiled audio_plugin.c, ld cannot find framework CoreAudioTypes. This provides the included types header, no linked symbols; remove nonexistent framework from link command, retain CoreFoundation. New push-triggered audio-only CI pending. Native kernel41544517451 and host41544522482 source0f376cabfab093439ea2cc749047b487244ed8dc status to verify. No new phone boot or root installation since audible14 readback. Full iOS PCM still unverified.
+
 ## 2026-11-03 AUDIBLE14 confirmed; real iOS audio integration in progress
 
 USER heard tones, cannot localize top/bottom. logs/audible14-20261103:369370 bytes,9 flush,no wrap,rawSHA81fe1eb45758b9269b5cd5eb0b792dae457318391d21113cb9b66221b1c14a9b. Both TFA9874 configured/PLL stable; TX+TFADSP feedback and existing-R25 calibration accepted. tone-command-accepted=1 amps-off=1 calibration-unchanged=1; RX/clock stopped, four pin restores verified. Acoustic output YES, which speakers UNKNOWN. PCM13 NOT boot tested. Phone left root TWRP after read-only capture. User requests real iOS output now; milestone15 continuous PCM+cdev+HAL+hash-gated installation pending checks/CI/device. No camera frame claim.

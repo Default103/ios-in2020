@@ -19,7 +19,7 @@ jobs:
           BUNDLE=out/HakiosAudio.driver
           mkdir -p "$BUNDLE"
           xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
-            -O2 -Wall -Wextra -Werror -bundle -framework CoreFoundation -framework CoreAudioTypes \
+            -O2 -Wall -Wextra -Werror -bundle -framework CoreFoundation \
             -o "$BUNDLE/HakiosAudio" userland/audio/audio_plugin.c
           cp userland/audio/Info.plist "$BUNDLE/Info.plist"
           codesign -s - -f "$BUNDLE"
