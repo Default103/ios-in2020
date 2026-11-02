@@ -1,0 +1,890 @@
+--- a/bsd/dev/in2020_adsp.c
++++ b/bsd/dev/in2020_adsp.c
+@@ -1,6 +1,6 @@
+-/* IN2020 staged port: currently only read-only steps 1 (SMEM/IPCC survey)
+- * and 2 (embedded firmware validation) are callable. DSP start, PMIC/RPMh,
+- * mailbox and image writes remain inaccessible until board validation.
++/* IN2020 staged ADSP port: milestones 1/2 inspect, 7 starts then stops,
++ * 11 keeps the DSP/APR link up. ARC votes share the validated TCS1 driver;
++ * TCS0 and the legacy reference power writer are not used.
+  * Adapted from ios-apollo 0784a286, patch 0138; see README.md and LICENSE.APSL.
+  */
+ /* apollo (xnu 0138): the Mi 10 port's devices/xiaomi-mi-10/overlays/xnu/files/bsd/dev/hakios.adsp.c
+@@ -122,6 +122,7 @@
+ extern void ml_io_unmap(vm_offset_t addr, vm_size_t sz);
+ extern uint64_t kvtophys(vm_offset_t va);
+ extern void loader_return(void);
++extern void in2020_tfa_probe(void);
+ extern kern_return_t thread_terminate(thread_t thread);
+ extern vm_offset_t pe_arm_get_soc_base_phys(void);
+ extern dev_t mdevlookup(int devid);
+@@ -131,7 +132,7 @@
+ extern lck_mtx_t hakios_aop_mailbox_lock;
+ extern lck_mtx_t hakios_smem_alloc_lock;
+ extern lck_mtx_t hakios_rsc_lock;            /* RPMh's sequencer, shared with the other DSP's driver */
+-extern void in2020_adsp_power_unavailable(bool hold);        /* apollo: sweet_rpmh.c's own requests held off while true */
++
+ 
+ static LCK_GRP_DECLARE(adsp_lock_group, "hakios-adsp");
+ 
+@@ -789,180 +790,19 @@
+ 	return sent;
+ }
+ 
+-/* ---- RPMh: the DSP's two rails, asked for while it boots ------------------------------------------------ */
+-
+-/*
+- * The audio DSP's logic and memories run from LPASS's own rails, LCX and LMX (dt: vdd_cx and
+- * vdd_mx of qcom,lpass@3700000 are PM7325 L5 and L4 "level" regulators, RPMh resources lcx.lvl and
+- * lmx.lvl), which the boot loader leaves at retention (16). Linux and Android ask for level 384
+- * while the DSP boots, until it says it has asked for its own (bit 2, "proxy-unvote"); without it
+- * the DSP rang once and left "SFR Init: wdog or kernel error suspected." in its last words.
+- *
+- * A request goes to RPMh through the application processor's sequencer (dt: rsc@18200000, DRV 2,
+- * qcom,tcs-offset 0xd00, qcom,tcs-config: TCSs 0 and 1 are for requests made at once), as Linux's
+- * rpmh-rsc.c writes one: the command's message id, address and value into a TCS that is idle, the
+- * command enabled and marked to be waited for, the TCS put in "active" mode and triggered, and its
+- * bit in the status of completions looked for. A rail asked for by level is asked by position in
+- * the list of its levels that the boot loader's command database keeps (cmd-db.c), the first
+- * position at or above the level wanted.
+- */
+-#define CMD_DB_PHYS             0x80860000UL
+-#define CMD_DB_SIZE             0x20000UL
+-
+-struct cmd_db_slave {
+-	uint16_t id, header_offset, data_offset, count, version, reserved[3];
+-};
+-struct cmd_db_header {
+-	uint32_t version;
+-	uint8_t magic[4];
+-	struct cmd_db_slave slave[8];
+-	uint32_t checksum, reserved;
+-	uint8_t data[];
+-};
+-struct cmd_db_entry {
+-	char id[8];
+-	uint32_t priority[2];
+-	uint32_t address;
+-	uint16_t length, offset;
+-};
+-
+-static const struct cmd_db_header *cmd_db;
+-
+-static struct block rsc = { "rsc", 0x18220000, 0x10000 };
+-#define RSC_TCS_BASE            0xd00
+-#define RSC_IRQ_STATUS          (RSC_TCS_BASE + 0x04)   /* a bit per TCS: done */
+-#define RSC_IRQ_CLEAR           (RSC_TCS_BASE + 0x08)
+-#define RSC_TCS(n)              (RSC_TCS_BASE + 672 * (n))
+-#define TCS_WAIT_FOR_DONE       0x10
+-#define TCS_CONTROL             0x14
+-#define TCS_STATUS              0x18                    /* not zero: idle */
+-#define TCS_ENABLED             0x1c
+-#define TCS_COMMAND(c)          (0x30 + 20 * (c))       /* message id, address, value, status */
+-#define TCS_ACTIVE_MODE         (1u << 16)
+-#define TCS_TRIGGER             (1u << 24)
+-#define MSGID_WRITE_WAITED      (8u | 1u << 8 | 1u << 16)       /* four bytes, an answer wanted, a write */
+-#define RPMH_TCS                0                       /* the first of the two for requests made at once */
+-
+-/* The level position RPMh takes for that rail and level; -1: not found. */
+-static int
+-rail_position(const char *name, uint32_t level, uint32_t *address)
+-{
+-	char id[8] = { 0 };
+-
+-	if (cmd_db == NULL) {
+-		cmd_db = (const struct cmd_db_header *)ml_io_map_unmappable(CMD_DB_PHYS, CMD_DB_SIZE, VM_WIMG_WCOMB);
+-	}
+-	if (!(cmd_db->magic[0] == 0xdb && cmd_db->magic[1] == 0x30 && cmd_db->magic[2] == 0x03 && cmd_db->magic[3] == 0x0c)) {
+-		printf("adsp: %u: the boot loader's command database is not there\n", step);
+-		return -1;
+-	}
+-	strlcpy(id, name, sizeof(id));
+-	for (unsigned s = 0; s < 8; s++) {
+-		const struct cmd_db_slave *slave = &cmd_db->slave[s];
+-		const struct cmd_db_entry *entry = (const struct cmd_db_entry *)(cmd_db->data + slave->header_offset);
+-
+-		if (slave->id == 0 || slave->count > 512) {
+-			continue;
+-		}
+-		for (unsigned i = 0; i < slave->count; i++) {
+-			const uint8_t *data;
+-			char levels[160];
+-			int at;
+-
+-			if (memcmp(entry[i].id, id, sizeof(id)) != 0) {
+-				continue;
+-			}
+-			if ((unsigned)slave->data_offset + entry[i].offset + entry[i].length > CMD_DB_SIZE - 0x1000) {
+-				return -1;
+-			}
+-			data = cmd_db->data + slave->data_offset + entry[i].offset;
+-			at = snprintf(levels, sizeof(levels), "%s at %#x, levels:", name, entry[i].address);
+-			for (unsigned l = 0; l < entry[i].length / 2u && l < 16; l++) {
+-				unsigned value = data[2 * l] | data[2 * l + 1] << 8;
+-
+-				if (l > 0 && value == 0) {
+-					break;
+-				}
+-				at += snprintf(levels + at, sizeof(levels) - (size_t)at, " %u", value);
+-			}
+-			printf("adsp: %u: RPMh has %s\n", step, levels);
+-			for (unsigned l = 0; l < entry[i].length / 2u && l < 16; l++) {
+-				if ((uint32_t)(data[2 * l] | data[2 * l + 1] << 8) >= level) {
+-					*address = entry[i].address;
+-					return (int)l;
+-				}
+-			}
+-			return -1;
+-		}
+-	}
+-	printf("adsp: %u: RPMh has no \"%s\"\n", step, name);
+-	return -1;
+-}
+-
+-/* The two rails at that level (Linux's proxy request), or given back (level 0). True: RPMh has said done. */
++/* ---- IN2020 ARC proxy votes, shared with the tested touch TCS1 driver ---- */
++extern int in2020_rpmh_audio_vote(unsigned level);
+ static bool
+ rails(uint32_t level)
+ {
+-	static const char *const names[2] = { "lcx.lvl", "lmx.lvl" };
+-	uint32_t addresses[2] = { 0, 0 }, values[2] = { 0, 0 }, done = 0;
+-	uint64_t began;
+-
+-	for (unsigned r = 0; r < 2; r++) {
+-		int position = level == 0 ? 0 : rail_position(names[r], level, &addresses[r]);
+-
+-		if (level == 0) {
+-			rail_position(names[r], 0, &addresses[r]);
+-		}
+-		if (position < 0 || addresses[r] == 0) {
+-			printf("adsp: %u: no position for %s at level %u: the rails are not asked\n", step, names[r], level);
+-			return false;
+-		}
+-		values[r] = (uint32_t)position;
+-	}
+-	need(&rsc);
+-	in2020_adsp_power_unavailable(true);                  /* apollo: sweet_rpmh.c's requests wait */
+-	lck_mtx_lock(&hakios_rsc_lock);
+-	/* (the boot loader leaves the trigger set after its last request, done: idle is what the status says) */
+-	if (rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS) == 0) {
+-		printf("adsp: %u: TCS %u of the sequencer is busy (status %#x, control %#x): the rails are not asked\n", step, RPMH_TCS,
+-		    rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS), rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL));
+-		lck_mtx_unlock(&hakios_rsc_lock);
+-		in2020_adsp_power_unavailable(false);
+-		return false;
+-	}
+-	printf("adsp: %u: about to ask RPMh, through TCS %u, for lcx.lvl (%#x) = %u and lmx.lvl (%#x) = %u (level %u%s)\n", step,
+-	    RPMH_TCS, addresses[0], values[0], addresses[1], values[1], level, level == 0 ? ": given back" : "");
+-	snprintf(last_write, sizeof(last_write), "step %u asked RPMh for the audio DSP's rails at level %u", step, level);
+-	hold();
+-	wr(rsc.base + RSC_IRQ_CLEAR, 1u << RPMH_TCS);
+-	for (unsigned r = 0; r < 2; r++) {
+-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r), MSGID_WRITE_WAITED);
+-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r) + 4, addresses[r]);
+-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r) + 8, values[r]);
+-	}
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_WAIT_FOR_DONE, 3);
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_ENABLED, 3);
+-	settle();
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) & ~TCS_TRIGGER);
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) | TCS_ACTIVE_MODE);
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) | TCS_TRIGGER);
+-	began = now_us();
+-	while (now_us() - began < 100000) {
+-		done = rd(rsc.base + RSC_IRQ_STATUS) & (1u << RPMH_TCS);
+-		if (done) {
+-			break;
+-		}
+-		sleep_us(50);
+-	}
+-	printf("adsp: %u: RPMh %s after %llu us; the commands' status %#x %#x, the TCS's %#x\n", step, done ? "HAS DONE IT" :
+-	    "HAS NOT SAID DONE", now_us() - began, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(0) + 12),
+-	    rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(1) + 12), rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS));
+-	wr(rsc.base + RSC_IRQ_CLEAR, 1u << RPMH_TCS);
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) & ~(TCS_TRIGGER | TCS_ACTIVE_MODE));
+-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_ENABLED, 0);
+-	lck_mtx_unlock(&hakios_rsc_lock);
+-	in2020_adsp_power_unavailable(false);
+-	return done != 0;
++    int error = 0;
++    for (unsigned i = 0; i < 1000; ++i) {
++        error = in2020_rpmh_audio_vote(level);
++        if (error != EBUSY) break;
++        sleep_ms(1);
++    }
++    if (error) printf("IN2020 ADSP: ARC vote level=%u errno=%d\n", level, error);
++    return error == 0;
+ }
+ 
+ /* ---- step 1: the shared memory --------------------------------------------------------------------- */
+@@ -1418,8 +1258,7 @@
+ 	dsp_started = false;
+ 	mailbox_send("{class: image, res: load_state, name: adsp, val: off}");
+ 	if (rails_asked) {
+-		rails(0);
+-		rails_asked = false;
++		if (rails(0)) rails_asked = false;
+ 	}
+ 	return true;
+ }
+@@ -1834,8 +1673,7 @@
+ 	}
+ 	rails_asked = true;
+ 	if (!mailbox_send("{class: image, res: load_state, name: adsp, val: on}")) {
+-		rails(0);
+-		rails_asked = false;
++		if (rails(0)) rails_asked = false;
+ 		lck_mtx_unlock(&dsp_lock);
+ 		return false;
+ 	}
+@@ -1847,8 +1685,7 @@
+ 		printf("adsp: %u: TRUSTZONE DOES NOT START THE AUDIO DSP: the call returns %d, its answer is %#llx\n", step, result,
+ 		    answer);
+ 		mailbox_send("{class: image, res: load_state, name: adsp, val: off}");
+-		rails(0);
+-		rails_asked = false;
++		if (rails(0)) rails_asked = false;
+ 		lck_mtx_unlock(&dsp_lock);
+ 		return false;
+ 	}
+@@ -1888,8 +1725,7 @@
+ 				    "given back\n", step, (now - started) / 1000, (now - started) % 1000);
+ 				lck_mtx_lock(&dsp_lock);
+ 				if (rails_asked) {
+-					rails(0);
+-					rails_asked = false;
++					if (rails(0)) rails_asked = false;
+ 				}
+ 				lck_mtx_unlock(&dsp_lock);
+ 			}
+@@ -3351,6 +3187,7 @@
+ 	for (unsigned waited = 0; waited < 300 && rootvnode == NULLVP; waited++) {
+ 		sleep_ms(200);
+ 	}
++	if (last_step >= 7) in2020_tfa_probe();
+ 	run_steps();
+ 	for (unsigned i = 0; i < sizeof(qrtr_servers) / sizeof(qrtr_servers[0]); i++) {
+ 		services += qrtr_servers[i].there;
+@@ -3375,6 +3212,7 @@
+ 	for (unsigned waited = 0; waited < 300 && rootvnode == NULLVP; waited++) {
+ 		sleep_ms(200);
+ 	}
++	if (last_step >= 7) in2020_tfa_probe();
+ 	run_steps();
+ 	printf("adsp: steps over\n");
+ 	thread_terminate(current_thread());
+@@ -3388,19 +3226,19 @@
+     thread_t thread;
+     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
+     if (!requested) return;
+-    if (requested > 2) {
+-        printf("IN2020 ADSP: only read-only steps 1..2 are enabled; rejected %u\n", requested);
++    if (requested != 1 && requested != 2 && requested != 7 && requested != 11) {
++        printf("IN2020 ADSP: supported milestones are 1,2,7,11; rejected %u\n", requested);
+         return;
+     }
+     adsp_memory = UMI_ADSP_MEMORY;
+     adsp_memory_size = UMI_ADSP_SIZE;
+     last_step = requested;
+-    keep = false;
++    keep = (requested == 11);
+     new_from = STEPS + 1;
+     pause_ms = 0;
+-    printf("IN2020 ADSP: read-only preflight steps=%u memory=%#x size=%#x\n",
++    printf("IN2020 ADSP: staged steps=%u memory=%#x size=%#x\n",
+         last_step, adsp_memory, adsp_memory_size);
+-    if (kernel_thread_start(steps_thread, NULL, &thread) != KERN_SUCCESS) {
++    if (kernel_thread_start(requested == 11 ? whole_thread : steps_thread, NULL, &thread) != KERN_SUCCESS) {
+         printf("IN2020 ADSP: thread unavailable\n");
+         return;
+     }
+--- a/bsd/dev/in2020_audio_glue.c
++++ b/bsd/dev/in2020_audio_glue.c
+@@ -51,12 +51,6 @@
+     return value;
+ }
+ 
+-/* The staged port cannot reach power control. Fail closed if that changes. */
+-void in2020_adsp_power_unavailable(bool hold);
+-void in2020_adsp_power_unavailable(__unused bool hold)
+-{
+-    panic("IN2020 ADSP: power path is not enabled by preflight");
+-}
+ 
+ void
+ hakios_battery_report(const struct hakios_battery_state *state)
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -108,7 +108,7 @@
+ bsd/dev/sweet_sample.c			standard
+ bsd/dev/sweet_keys.c			standard
+ bsd/dev/sweet_touch.c			standard
+-bsd/dev/sweet_rpmh.c			standard
++bsd/dev/in2020_rpmh.c		standard
+ bsd/dev/sweet_spmi.c			standard
+ bsd/dev/sweet_usb.c			standard
+ bsd/dev/sweet_cpufreq.c		standard
+@@ -116,6 +116,7 @@
+ bsd/dev/in2020_update.c		standard
+ bsd/dev/in2020_adsp.c		standard
+ bsd/dev/in2020_audio_glue.c	standard
++bsd/dev/in2020_tfa.c		standard
+ bsd/dev/mem.c				standard
+ bsd/dev/munge.c 			optional config_requires_u32_munging
+ bsd/dev/unix_startup.c			standard
+--- /dev/null
++++ b/bsd/dev/in2020_rpmh.c
+@@ -0,0 +1,397 @@
++/*
++ * IN2020 shared RPMh transactions: verified touch VRM and ADSP ARC proxy votes.
++ * TCS0 remains firmware-owned; only empty idle TCS1 can be used.
++ * Sole XNU apps-DRV owner, called from thread context with deep idle disabled.
++ * No sleep/wake programming, SPMI writes, GIC handler, or timeout recovery.
++ */
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++#include "in2020_arc.h"
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++int sweet_rpmh_vreg_enable(const char *res, unsigned mv);
++int in2020_rpmh_audio_vote(unsigned level);
++
++/* Live downstream DT has two positional reg entries, no reg-names. */
++#define RH_RSC_PA       0x18220000u
++#define RH_TCS_PA       0x18220d00u
++#define RH_TCS_SIZE     0x3000u
++#define RH_DICT_PA      0x0c3f000cu
++#define RH_DRV          2u
++#define RH_ACTIVE_N     2u       /* TCS0 is firmware-owned; IN2020 uses TCS1 */
++#define RH_NORMAL_N     8u       /* hidden CONTROL TCS is not in this bank */
++#define RH_TCS_STRIDE   0x2a0u
++#define RH_CMD_STRIDE   0x14u
++#define RH_IRQ_EN       0x00u
++#define RH_IRQ_STATUS   0x04u
++#define RH_IRQ_CLEAR    0x08u
++#define RH_WAIT         0x10u
++#define RH_CONTROL      0x14u
++#define RH_STATUS       0x18u
++#define RH_ENABLE       0x1cu
++#define RH_MSGID        0x30u
++#define RH_ADDR         0x34u
++#define RH_DATA         0x38u
++#define RH_CMD_STATUS   0x3cu
++#define RH_AMC_EN       (1u << 16)
++#define RH_TRIGGER      (1u << 24)
++#define RH_ISSUED       (1u << 8)
++#define RH_COMPLETE     (1u << 16)
++#define RH_WRITE_ACK    (8u | (1u << 8) | (1u << 16))
++#define RH_DB_MAGIC     0x0c0330dbu
++#define RH_DB_HEADER    144u
++#define RH_DB_ENTRY     24u
++#define RH_DB_MAX       0x100000u /* policy bound, not a DT size */
++#define RH_VRM          4u
++#define RH_TIMEOUT_US   100000u
++
++static vm_offset_t rh_rsc, rh_tcs, rh_dict, rh_db;
++static uint32_t rh_db_size;
++static unsigned rh_ncpt;
++static unsigned rh_lock;
++static bool rh_poisoned;
++
++static uint32_t
++rh_read(vm_offset_t base, uint32_t off)
++{
++	uint32_t v = *(volatile uint32_t *)(base + off);
++	__asm__ volatile("dmb oshld" ::: "memory");
++	return v;
++}
++
++static void
++rh_write(vm_offset_t base, uint32_t off, uint32_t value)
++{
++	__asm__ volatile("dmb oshst" ::: "memory");
++	*(volatile uint32_t *)(base + off) = value;
++	__asm__ volatile("dsb osh" ::: "memory");
++}
++
++static bool
++rh_sync(uint32_t off, uint32_t value)
++{
++	rh_write(rh_tcs, off, value);
++	for (unsigned i = 0; i < 1000; ++i) {
++		if (rh_read(rh_tcs, off) == value) {
++			return true;
++		}
++		delay(1);
++	}
++	printf("SWEET RPMH: readback timeout off=%#x want=%#x got=%#x\n",
++	    off, value, rh_read(rh_tcs, off));
++	return false;
++}
++
++/* DB is little endian; avoid packed structs and unaligned Device loads. */
++static uint16_t
++rh_db16(uint32_t off)
++{
++	uint32_t v = rh_read(rh_db, off & ~3u);
++	return (uint16_t)(v >> (8u * (off & 3u)));
++}
++
++static bool
++rh_range(uint32_t off, uint32_t size)
++{
++	return off <= rh_db_size && size <= rh_db_size - off;
++}
++
++static int
++rh_map(void)
++{
++	if (!rh_rsc) {
++		rh_rsc = ml_io_map(RH_RSC_PA, 0x100);
++	}
++	if (!rh_tcs) {
++		rh_tcs = ml_io_map(RH_TCS_PA, RH_TCS_SIZE);
++	}
++	if (!rh_dict) {
++		rh_dict = ml_io_map(RH_DICT_PA, 8);
++	}
++	if (!rh_rsc || !rh_tcs || !rh_dict) {
++		printf("SWEET RPMH: RSC/locator mapping failed\n");
++		return ENOMEM;
++	}
++	uint32_t id = rh_read(rh_rsc, 0);
++	uint32_t solver = rh_read(rh_rsc, 4);
++	uint32_t config = rh_read(rh_rsc, 0x0c);
++	unsigned major = (id >> 16) & 0xffu;
++	unsigned count = (config >> (6u * RH_DRV)) & 0x3fu;
++	rh_ncpt = (config >> 27) & 0x1fu;
++	printf("SWEET RPMH: rsc=%#x tcs=%#x DRV=%u id=%#x solver=%#x config=%#x TCS=%u ncpt=%u\n",
++	    RH_RSC_PA, RH_TCS_PA, RH_DRV, id, solver, config, count, rh_ncpt);
++	/* This client implements the pre-v3 layout only; do not guess v3 offsets. */
++	if ((major != 1 && major != 2) || config == 0xffffffffu ||
++	    solver == 0xffffffffu || count < RH_NORMAL_N ||
++	    count > RH_TCS_SIZE / RH_TCS_STRIDE || rh_ncpt < 3 || rh_ncpt > 16) {
++		printf("SWEET RPMH: unsupported RSC geometry/revision\n");
++		return ENODEV;
++	}
++	if (!rh_db) {
++		uint32_t pa = rh_read(rh_dict, 0);
++		uint32_t size = rh_read(rh_dict, 4);
++		printf("SWEET RPMH: cmd-db locator=%#x pa=%#x size=%#x\n", RH_DICT_PA, pa, size);
++		/* Firmware supplies the reserved RAM address; never scan physical RAM. */
++		if (pa < 0x80000000u || (pa & 3u) || (size & 3u) ||
++		    size < RH_DB_HEADER || size > RH_DB_MAX ||
++		    (uint64_t)pa + size > 0x100000000ULL) {
++			printf("SWEET RPMH: invalid cmd-db locator\n");
++			return EINVAL;
++		}
++		rh_db = ml_io_map(pa, size);
++		if (!rh_db) {
++			return ENOMEM;
++		}
++		rh_db_size = size;
++	}
++	uint32_t db_version = rh_read(rh_db, 0);
++	uint32_t magic = rh_read(rh_db, 4);
++	uint32_t flags = rh_read(rh_db, 140);
++	printf("SWEET RPMH: cmd-db version=%#x magic=%#x checksum=%#x flags=%#x\n",
++	    db_version, magic, rh_read(rh_db, 136), flags);
++	/* Linux only checks magic; version 1 is an intentionally stricter policy. */
++	if (magic != RH_DB_MAGIC || db_version != 1 || (flags & 1u)) {
++		printf("SWEET RPMH: unsupported/standalone cmd-db\n");
++		return EINVAL;
++	}
++	return 0;
++}
++
++static int
++rh_lookup(const char *res, uint32_t *address)
++{
++	uint32_t key[2] = {0, 0};
++	for (unsigned i = 0; i < 8 && res[i]; ++i) {
++		key[i / 4] |= (uint32_t)(uint8_t)res[i] << (8u * (i % 4));
++	}
++	unsigned matches = 0;
++	for (unsigned i = 0; i < 8; ++i) {
++		uint32_t h = 8u + 16u * i;
++		unsigned slave = rh_db16(h);
++		if (!slave) {
++			break;
++		}
++		uint32_t entries = RH_DB_HEADER + rh_db16(h + 2);
++		uint32_t aux = RH_DB_HEADER + rh_db16(h + 4);
++		unsigned count = rh_db16(h + 6);
++		if (slave < 3 || slave > 5 || (entries & 3u) ||
++		    !rh_range(entries, count * RH_DB_ENTRY) || !rh_range(aux, 0)) {
++			printf("SWEET RPMH: malformed cmd-db slave header %u\n", i);
++			return EINVAL;
++		}
++		for (unsigned j = 0; j < count; ++j) {
++			uint32_t e = entries + RH_DB_ENTRY * j;
++			if (rh_read(rh_db, e) != key[0] || rh_read(rh_db, e + 4) != key[1]) {
++				continue;
++			}
++			uint32_t addr = rh_read(rh_db, e + 16);
++			if (slave != RH_VRM || (addr >> 16) != RH_VRM || (addr & 15u) ||
++			    !rh_range(aux + rh_db16(e + 22), rh_db16(e + 20))) {
++				printf("SWEET RPMH: invalid VRM entry for %s\n", res);
++				return EINVAL;
++			}
++			*address = addr;
++			++matches;
++			printf("SWEET RPMH: %s addr=%#x slave=%u aux-version=%#x priority=%#x:%#x\n",
++			    res, addr, slave, rh_db16(h + 8),
++			    rh_read(rh_db, e + 8), rh_read(rh_db, e + 12));
++		}
++	}
++	if (matches != 1) {
++		printf("SWEET RPMH: %s lookup matches=%u; refusing\n", res, matches);
++		return ENODEV;
++	}
++	return 0;
++}
++
++static bool
++rh_free(unsigned t)
++{
++	uint32_t b = t * RH_TCS_STRIDE;
++	/* Idle alone is insufficient: a sleep/wake payload can be armed and idle. */
++	return rh_read(rh_tcs, b + RH_STATUS) != 0 &&
++	    rh_read(rh_tcs, b + RH_STATUS) != 0xffffffffu &&
++	    rh_read(rh_tcs, b + RH_CONTROL) == 0 &&
++	    rh_read(rh_tcs, b + RH_ENABLE) == 0 &&
++	    rh_read(rh_tcs, b + RH_WAIT) == 0 &&
++	    !(rh_read(rh_tcs, RH_IRQ_STATUS) & (1u << t));
++}
++
++static int
++rh_transfer(const uint32_t *addresses, const uint32_t *values, unsigned count)
++{
++	if (!addresses || !values || !count || count > 3 || count > rh_ncpt) return EINVAL;
++	uint32_t mask = (1u << count) - 1u;
++	int chosen = -1;
++	for (unsigned t = 1; t < RH_ACTIVE_N; ++t) {
++		uint32_t b = t * RH_TCS_STRIDE;
++		uint32_t enabled = rh_read(rh_tcs, b + RH_ENABLE);
++		printf("SWEET RPMH: ACTIVE TCS%u idle=%#x control=%#x enable=%#x wait=%#x\n",
++		    t, rh_read(rh_tcs, b + RH_STATUS), rh_read(rh_tcs, b + RH_CONTROL),
++		    enabled, rh_read(rh_tcs, b + RH_WAIT));
++		if (enabled & ~((1u << rh_ncpt) - 1u)) {
++			return EIO;
++		}
++		for (unsigned c = 0; c < rh_ncpt; ++c) {
++            if (!(enabled & (1u << c))) continue;
++            for (unsigned i = 0; i < count; ++i) {
++                if (rh_read(rh_tcs, b + RH_ADDR + c * RH_CMD_STRIDE) == addresses[i]) {
++                    printf("SWEET RPMH: conflicting inherited request in TCS%u\n", t);
++                    return EBUSY;
++                }
++            }
++        }
++		if (chosen < 0 && rh_free(t)) {
++			chosen = (int)t;
++		}
++	}
++	if (chosen < 0) {
++		printf("SWEET RPMH: no empty idle ACTIVE TCS; leaving inherited state intact\n");
++		return EBUSY;
++	}
++	unsigned t = (unsigned)chosen;
++	uint32_t b = t * RH_TCS_STRIDE, bit = 1u << t;
++	uint32_t irq_en = rh_read(rh_tcs, RH_IRQ_EN);
++	if (irq_en == 0xffffffffu || !rh_free(t)) {
++		return EBUSY;
++	}
++	/* Only this TCS's source is masked. Other sources/CPU IRQs remain intact. */
++	if (!rh_sync(RH_IRQ_EN, irq_en & ~bit)) {
++		rh_poisoned = true;
++		return EIO;
++	}
++	if (!rh_free(t)) {
++		/* No payload was touched. Do not acknowledge somebody else's IRQ. */
++		if (!rh_sync(RH_IRQ_EN, (rh_read(rh_tcs, RH_IRQ_EN) & ~bit) | (irq_en & bit))) {
++			rh_poisoned = true;
++		}
++		return EBUSY;
++	}
++	/* From here an uncertain write/timeout quarantines our slot for this boot. */
++	rh_poisoned = true;
++	printf("SWEET RPMH: TCS%u ACTIVE commands=%u irq-enable=%#x\n", t, count, irq_en);
++	for (unsigned c = 0; c < count; ++c) {
++		uint32_t cmd = b + c * RH_CMD_STRIDE;
++		if (!rh_sync(cmd + RH_MSGID, RH_WRITE_ACK) ||
++		    !rh_sync(cmd + RH_ADDR, addresses[c]) ||
++		    !rh_sync(cmd + RH_DATA, values[c])) {
++			return EIO;
++		}
++	}
++	if (!rh_sync(b + RH_WAIT, mask) || !rh_sync(b + RH_ENABLE, mask) ||
++	    !rh_sync(b + RH_CONTROL, 0) || !rh_sync(b + RH_CONTROL, RH_AMC_EN)) {
++		return EIO;
++	}
++	rh_write(rh_tcs, b + RH_CONTROL, RH_AMC_EN | RH_TRIGGER);
++	uint32_t irq = 0, idle = 0, status[3] = {0, 0, 0};
++	bool done = false, progress = false;
++	for (unsigned us = 0; us < RH_TIMEOUT_US; ++us) {
++		irq = rh_read(rh_tcs, RH_IRQ_STATUS);
++		idle = rh_read(rh_tcs, b + RH_STATUS);
++		bool complete = true;
++		for (unsigned c = 0; c < count; ++c) {
++			status[c] = rh_read(rh_tcs, b + RH_CMD_STATUS + c * RH_CMD_STRIDE);
++			complete &= status[c] != 0xffffffffu &&
++			    (status[c] & (RH_ISSUED | RH_COMPLETE)) == (RH_ISSUED | RH_COMPLETE);
++		}
++		/* A fresh IRQ or observed execution transition excludes stale CMD_STATUS. */
++		progress |= idle == 0 || !complete;
++		if (idle && idle != 0xffffffffu && irq != 0xffffffffu &&
++		    ((irq & bit) || progress) && complete) {
++			done = true;
++			break;
++		}
++		delay(1);
++	}
++	printf("SWEET RPMH: TCS%u done=%d irq=%#x idle=%#x control=%#x cmd-status=%#x/%#x/%#x\n",
++	    t, done, irq, idle, rh_read(rh_tcs, b + RH_CONTROL), status[0], status[1], status[2]);
++	if (!done) {
++		printf("SWEET RPMH: timeout; TCS quarantined, IRQ remains masked; no reset/retry\n");
++		return ETIMEDOUT;
++	}
++	/* Proven completion: clear trigger before mode, then free only our commands. */
++	if (!rh_sync(b + RH_CONTROL, RH_AMC_EN) || !rh_sync(b + RH_CONTROL, 0) ||
++	    !rh_sync(b + RH_ENABLE, 0) || !rh_sync(b + RH_WAIT, 0)) {
++		return EIO;
++	}
++	rh_write(rh_tcs, RH_IRQ_CLEAR, bit); /* W1C: never clear other TCS bits */
++	if ((rh_read(rh_tcs, RH_IRQ_STATUS) & bit) ||
++	    !rh_sync(RH_IRQ_EN, (rh_read(rh_tcs, RH_IRQ_EN) & ~bit) | (irq_en & bit))) {
++		return EIO;
++	}
++	rh_poisoned = false;
++	printf("SWEET RPMH: regulator ACTIVE vote complete\n");
++	return 0;
++}
++
++static int
++rh_send(uint32_t address, unsigned mv)
++{
++    const uint32_t addresses[3] = {address, address + 8, address + 4};
++    const uint32_t values[3] = {mv, 7, 1};
++    return rh_transfer(addresses, values, 3);
++}
++
++int
++in2020_rpmh_audio_vote(unsigned level)
++{
++    if (level != 0 && level != 384) return EINVAL;
++    if (__atomic_exchange_n(&rh_lock, 1, __ATOMIC_ACQUIRE)) return EBUSY;
++    int error = EIO;
++    if (rh_poisoned) goto out;
++    error = rh_map();
++    if (!error) {
++        struct in2020_arc_vote votes[2];
++        if (!in2020_arc_pair((const volatile uint8_t *)rh_db, rh_db_size, level, votes)) {
++            printf("IN2020 RPMH: malformed/missing LCX/LMX level %u; no ARC vote\n", level);
++            error = EINVAL;
++        } else {
++            const uint32_t addresses[2] = {votes[0].address, votes[1].address};
++            const uint32_t values[2] = {votes[0].value, votes[1].value};
++            printf("IN2020 RPMH: LCX %#x index=%u LMX %#x index=%u level=%u\n",
++                addresses[0], values[0], addresses[1], values[1], level);
++            error = rh_transfer(addresses, values, 2);
++        }
++    }
++out:
++    __atomic_store_n(&rh_lock, 0, __ATOMIC_RELEASE);
++    return error;
++}
++
++int
++sweet_rpmh_vreg_enable(const char *res, unsigned mv)
++{
++	/* Only the two phone-verified IN2020 touch rails are authorized here. */
++	if (!res || !((!strcmp(res, "ldoc1") && mv == 1800) ||
++	    (!strcmp(res, "ldoa13") && mv == 3008))) {
++		printf("SWEET RPMH: expected ldoc1/1800 or ldoa13/3008\n");
++		return EINVAL;
++	}
++	if (__atomic_exchange_n(&rh_lock, 1, __ATOMIC_ACQUIRE)) {
++		return EBUSY;
++	}
++	int error = EIO;
++	uint32_t address = 0;
++	if (rh_poisoned) {
++		printf("SWEET RPMH: previous uncertain transaction; refusing further access\n");
++		goto out;
++	}
++	error = rh_map();
++	if (!error) {
++		error = rh_lookup(res, &address);
++	}
++	if (!error) {
++		error = rh_send(address, mv);
++	}
++out:
++	if (error) {
++		printf("SWEET RPMH: enable failed errno=%d\n", error);
++	}
++	__atomic_store_n(&rh_lock, 0, __ATOMIC_RELEASE);
++	return error;
++}
++#endif /* ARM64_BOARD_CONFIG_SWEET */
+--- /dev/null
++++ b/bsd/dev/in2020_arc.h
+@@ -0,0 +1,48 @@
++#ifndef IN2020_ARC_H
++#define IN2020_ARC_H
++#include <stdint.h>
++#include <stdbool.h>
++struct in2020_arc_vote { uint32_t address, value; };
++static inline uint32_t arc16(const volatile uint8_t *p) { return p[0] | ((uint32_t)p[1]<<8); }
++static inline uint32_t arc32(const volatile uint8_t *p) { return arc16(p) | (arc16(p+2)<<16); }
++static inline bool arc_range(uint32_t at,uint32_t n,uint32_t size) { return at<=size && n<=size-at; }
++/* Only the two measured ADSP proxy resources and levels are accepted.
++ * CMD DB v1: 144-byte header, eight 16-byte slave headers, 24-byte entries.
++ * ARC auxiliary levels are <=16 little-endian u16 values; RPMh takes an index.
++ */
++static inline bool in2020_arc_pair(const volatile uint8_t *db,uint32_t size,
++    uint32_t level,struct in2020_arc_vote out[2])
++{
++    static const char ids[2][8]={"lcx.lvl","lmx.lvl"};
++    struct in2020_arc_vote found[2]={{0}};unsigned matches[2]={0};
++    if(!db || !out || size<144 || size>0x100000 || (level!=0 && level!=384)) return false;
++    if(arc32(db)!=1 || arc32(db+4)!=0x0c0330db || (arc32(db+140)&1)) return false;
++    for(unsigned s=0;s<8;++s) {
++        unsigned h=8+s*16;if(arc16(db+h)!=3) continue;
++        uint32_t entries=144+arc16(db+h+2),aux=144+arc16(db+h+4),count=arc16(db+h+6);
++        if((entries&3) || !arc_range(entries,count*24,size) || !arc_range(aux,0,size)) return false;
++        for(unsigned i=0;i<count;++i) {
++            uint32_t e=entries+i*24;
++            for(unsigned r=0;r<2;++r) {
++                bool equal=true;for(unsigned c=0;c<8;++c) equal&=db[e+c]==(uint8_t)ids[r][c];
++                if(!equal) continue;
++                if(++matches[r]!=1) return false;
++                uint32_t address=arc32(db+e+16),n=arc16(db+e+20),at=aux+arc16(db+e+22);
++                if((address>>16)!=3 || (address&3) || n<2 || n>32 || (n&1) || !arc_range(at,n,size)) return false;
++                if(arc16(db+at)!=0) return false;
++                bool selected=false;uint32_t previous=0;
++                for(unsigned k=0;k<n/2;++k) {
++                    uint32_t value=arc16(db+at+k*2);
++                    if(k && !value) break;
++                    if(k && value<=previous) return false;
++                    previous=value;
++                    if(value==level) { found[r]=(struct in2020_arc_vote){address,k};selected=true; }
++                }
++                if(!selected) return false;
++            }
++        }
++    }
++    if(matches[0]!=1 || matches[1]!=1 || found[0].address==found[1].address) return false;
++    out[0]=found[0];out[1]=found[1];return true;
++}
++#endif
+--- /dev/null
++++ b/bsd/dev/in2020_tfa.c
+@@ -0,0 +1,101 @@
++/* IN2020 TFA9874 identity/OTP-status reads, no amplifier programming.
++ * Live FDT: I2C@884000 uses GPIO44/45 (QUP15), SOUTH TLMM tile.
++ * Pin tile/control semantics: pinned OnePlus pinctrl-kona.c; open-drain
++ * transaction method matches the phone-tested SEC touch transport.
++ * Pins and output latches are restored after every bounded transaction.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++void in2020_tfa_probe(void);
++static vm_offset_t pins;
++static uint32_t saved_cfg[2], saved_io[2];
++static uint64_t deadline, frequency;
++static uint32_t pin_read(unsigned pin,unsigned reg) {
++    uint32_t v=*(volatile uint32_t *)(pins+pin*0x1000u+reg);
++    __asm__ volatile("dmb oshld" ::: "memory");return v;
++}
++static void pin_write(unsigned pin,unsigned reg,uint32_t value) {
++    __asm__ volatile("dmb oshst" ::: "memory");
++    *(volatile uint32_t *)(pins+pin*0x1000u+reg)=value;
++    __asm__ volatile("dsb osh" ::: "memory");
++}
++static uint64_t ticks(void) {uint64_t v;__asm__ volatile("mrs %0,cntpct_el0":"=r"(v));return v;}
++static bool expired(void) {return ticks()>=deadline;}
++static void line(unsigned pin,bool release) {
++    uint32_t cfg=saved_cfg[pin]&~(0x3cu|0x200u);
++    if(cfg&(1u<<11))cfg|=1u<<12;
++    if(!release) {pin_write(pin,4,pin_read(pin,4)&~2u);cfg|=0x200u;}
++    pin_write(pin,0,cfg);delay(5);
++}
++static bool level(unsigned pin) {return !!(pin_read(pin,4)&1);}
++static bool clock_high(void) {
++    line(1,true);
++    for(unsigned i=0;i<1000 && !expired();++i) {if(level(1))return true;delay(1);}
++    return false;
++}
++static bool start(void) {
++    line(0,true);if(!clock_high() || !level(0))return false;
++    line(0,false);line(1,false);return !expired();
++}
++static void stop(void) {
++    line(1,false);line(0,false);if(clock_high())line(0,true);
++}
++static bool put(uint8_t value) {
++    for(unsigned i=0;i<8;++i) {
++        if(expired())return false;
++        line(0,!!(value&0x80));if(!clock_high())return false;
++        line(1,false);value<<=1;
++    }
++    line(0,true);if(!clock_high())return false;
++    bool ack=!level(0);line(1,false);return ack;
++}
++static bool get(uint8_t *value,bool ack) {
++    uint8_t v=0;line(0,true);
++    for(unsigned i=0;i<8;++i) {
++        if(expired() || !clock_high())return false;
++        v=(uint8_t)((v<<1)|level(0));line(1,false);
++    }
++    line(0,!ack);if(!clock_high())return false;
++    line(1,false);line(0,true);*value=v;return true;
++}
++static bool read_register(unsigned address,unsigned reg,uint16_t *value) {
++    if((address!=0x34 && address!=0x35) || (reg!=3 && reg!=0xf0 && reg!=0xf5))return false;
++    for(unsigned p=0;p<2;++p) {saved_cfg[p]=pin_read(p,0);saved_io[p]=pin_read(p,4);}
++    if(!level(0) || !level(1)) {printf("IN2020 TFA: bus not idle; untouched\n");return false;}
++    for(unsigned p=0;p<2;++p) {
++        unsigned function=(saved_cfg[p]>>2)&15;
++        if(function>1) {printf("IN2020 TFA: unexpected pin function %u; untouched\n",function);return false;}
++    }
++    deadline=ticks()+frequency/10;
++    uint8_t high=0,low=0;
++    bool ok=start() && put((uint8_t)(address<<1)) && put((uint8_t)reg) &&
++        start() && put((uint8_t)((address<<1)|1)) && get(&high,true) && get(&low,false);
++    stop();
++    for(unsigned p=0;p<2;++p) {
++        line(p,true);
++        pin_write(p,4,(pin_read(p,4)&~2u)|(saved_io[p]&2));
++        pin_write(p,0,saved_cfg[p]);
++    }
++    if(ok)*value=(uint16_t)(((unsigned)high<<8)|low);
++    return ok;
++}
++void in2020_tfa_probe(void) {
++    static bool done;if(done)return;done=true;
++    __asm__ volatile("mrs %0,cntfrq_el0":"=r"(frequency));
++    if(frequency!=19200000) {printf("IN2020 TFA: unverified timer; skipped\n");return;}
++    pins=ml_io_map(0x0f52c000,0x2000);
++    if(!pins) {printf("IN2020 TFA: map failed\n");return;}
++    printf("IN2020 TFA: identity/status only, GPIO44/45; no reset/calibration/enable\n");
++    for(unsigned address=0x34;address<=0x35;++address) {
++        uint16_t id=0,mtp=0,r25=0;
++        if(!read_register(address,3,&id) || id!=0x0c74) {
++            printf("IN2020 TFA: addr=%#x expected identity unavailable (%#x)\n",address,id);continue;
++        }
++        bool m=read_register(address,0xf0,&mtp),r=read_register(address,0xf5,&r25);
++        printf("IN2020 TFA: addr=%#x revision=%#x MTP=%#x/%d OTC=%u EX=%u R25raw=%#x/%d\n",
++            address,id,mtp,m,mtp&1u,(mtp>>1)&1u,r25,r);
++    }
++}

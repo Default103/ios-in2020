@@ -11,14 +11,31 @@ attributes its base to JopangJovan/hackios-xnu-kernel-umi / HackiOS (APSL 2.0).
 Original attribution is retained; the accompanying license is LICENSE.APSL.
 
 The IN2020 carveout is 0x8fe00000 + 0x02500000, not the Mi 10's address.
-The native kernel port currently exposes only `in2020adsp=1` (SMEM/IPCC survey)
-and `in2020adsp=2` (survey plus embedded firmware validation). Higher values
-are rejected. The generic `adsp=1` / `adsp_step` entry point is not installed.
-The power-lock callback panics if called, rather than silently pretending that
-shared RPMh arbitration is implemented. No DSP authentication/start or amplifier
-enable is reachable through this port's boot entry point. It produces diagnostics,
-not speaker output. Original later-stage source is retained for further review,
-not authorized as a working IN2020 hardware configuration.
+The native kernel port exposes `in2020adsp=1` (SMEM/IPCC survey), `=2` (survey
+plus embedded firmware validation), `=7` (start then stop the DSP), and `=11`
+(keep the DSP/APR link up). Other values are rejected. The generic `adsp=1` /
+`adsp_step` entry point is not installed. Steps 1/2 passed on the phone; the
+write stages require their own device validation. No amplifier enable or PCM
+sink is installed. These milestones do not imply working speaker output.
+
+The inherited standalone TCS0 writer has been removed. The IN2020 RPMh module
+retains the tested touch VRM API and replaces the build's previous RPMh module
+with one shared implementation. Its private transaction engine supports 2 ARC
+or the original 3 VRM commands using only an empty idle TCS1; TCS0 stays firmware
+owned. Locking, fresh completion checks, IRQ masking/restoration and transaction
+quarantine are shared. The touch resource/voltage whitelist is unchanged.
+Only exact ARC levels 0/384 for lcx.lvl and lmx.lvl are accepted, with strict
+live command-DB bounds, slave class, addresses, uniqueness and auxiliary-level
+validation. An absent or malformed resource table prevents the power request.
+
+Milestones 7/11 also perform bounded native TFA identity and OTP-status reads
+through GPIO44/45. Only addresses 0x34/0x35 and registers 0x03/0xf0/0xf5 are
+accessible; health fields are read only after identity 0x0c74 matches. The bus
+must initially be idle with an expected pin function. Open-drain transactions
+never drive high, have a 100ms deadline, and restore both pin configurations and
+output latches. No reset GPIO, amplifier data register, OTP programming or
+calibration routine is exposed. MTP/R25 values are raw diagnostics and must not
+be interpreted if the associated read-success flag is false.
 
 Firmware comes only from `/in2020-adsp` in the ADT. The host builder verifies
 all captured hashes; no firmware is added to git or installed on the root.
@@ -26,7 +43,6 @@ The ELF32/Hexagon header gate checks size, endianness, machine, program-header
 layout and count before walking any segments. Firmware segment fit and sizes
 are then checked by the inherited walker. Map failures stop read-only inspection.
 
-Remaining audio work: validate initial DSP survey, review IN2020 AOP/RPMh/SCM,
-implement shared power arbitration and staged DSP startup, TFA9874 control and
+Remaining audio work: validate staged DSP authentication/start and APR on device, TFA9874 control and
 protection, AFE/PCM playback, then the iOS AudioServerPlugIn bridge. Do not use
 Apollo's CS35L41 amplifier tables. No claim of working audio is made.

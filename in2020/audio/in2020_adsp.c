@@ -1,6 +1,6 @@
-/* IN2020 staged port: currently only read-only steps 1 (SMEM/IPCC survey)
- * and 2 (embedded firmware validation) are callable. DSP start, PMIC/RPMh,
- * mailbox and image writes remain inaccessible until board validation.
+/* IN2020 staged ADSP port: milestones 1/2 inspect, 7 starts then stops,
+ * 11 keeps the DSP/APR link up. ARC votes share the validated TCS1 driver;
+ * TCS0 and the legacy reference power writer are not used.
  * Adapted from ios-apollo 0784a286, patch 0138; see README.md and LICENSE.APSL.
  */
 /* apollo (xnu 0138): the Mi 10 port's devices/xiaomi-mi-10/overlays/xnu/files/bsd/dev/hakios.adsp.c
@@ -122,6 +122,7 @@ extern vm_offset_t ml_io_map_unmappable(vm_offset_t phys_addr, vm_size_t size, u
 extern void ml_io_unmap(vm_offset_t addr, vm_size_t sz);
 extern uint64_t kvtophys(vm_offset_t va);
 extern void loader_return(void);
+extern void in2020_tfa_probe(void);
 extern kern_return_t thread_terminate(thread_t thread);
 extern vm_offset_t pe_arm_get_soc_base_phys(void);
 extern dev_t mdevlookup(int devid);
@@ -131,7 +132,7 @@ extern int mdevgetkernelrange(dev_t dev, vm_offset_t *base, uint64_t *size);
 extern lck_mtx_t hakios_aop_mailbox_lock;
 extern lck_mtx_t hakios_smem_alloc_lock;
 extern lck_mtx_t hakios_rsc_lock;            /* RPMh's sequencer, shared with the other DSP's driver */
-extern void in2020_adsp_power_unavailable(bool hold);        /* apollo: sweet_rpmh.c's own requests held off while true */
+
 
 static LCK_GRP_DECLARE(adsp_lock_group, "hakios-adsp");
 
@@ -789,180 +790,19 @@ out:
 	return sent;
 }
 
-/* ---- RPMh: the DSP's two rails, asked for while it boots ------------------------------------------------ */
-
-/*
- * The audio DSP's logic and memories run from LPASS's own rails, LCX and LMX (dt: vdd_cx and
- * vdd_mx of qcom,lpass@3700000 are PM7325 L5 and L4 "level" regulators, RPMh resources lcx.lvl and
- * lmx.lvl), which the boot loader leaves at retention (16). Linux and Android ask for level 384
- * while the DSP boots, until it says it has asked for its own (bit 2, "proxy-unvote"); without it
- * the DSP rang once and left "SFR Init: wdog or kernel error suspected." in its last words.
- *
- * A request goes to RPMh through the application processor's sequencer (dt: rsc@18200000, DRV 2,
- * qcom,tcs-offset 0xd00, qcom,tcs-config: TCSs 0 and 1 are for requests made at once), as Linux's
- * rpmh-rsc.c writes one: the command's message id, address and value into a TCS that is idle, the
- * command enabled and marked to be waited for, the TCS put in "active" mode and triggered, and its
- * bit in the status of completions looked for. A rail asked for by level is asked by position in
- * the list of its levels that the boot loader's command database keeps (cmd-db.c), the first
- * position at or above the level wanted.
- */
-#define CMD_DB_PHYS             0x80860000UL
-#define CMD_DB_SIZE             0x20000UL
-
-struct cmd_db_slave {
-	uint16_t id, header_offset, data_offset, count, version, reserved[3];
-};
-struct cmd_db_header {
-	uint32_t version;
-	uint8_t magic[4];
-	struct cmd_db_slave slave[8];
-	uint32_t checksum, reserved;
-	uint8_t data[];
-};
-struct cmd_db_entry {
-	char id[8];
-	uint32_t priority[2];
-	uint32_t address;
-	uint16_t length, offset;
-};
-
-static const struct cmd_db_header *cmd_db;
-
-static struct block rsc = { "rsc", 0x18220000, 0x10000 };
-#define RSC_TCS_BASE            0xd00
-#define RSC_IRQ_STATUS          (RSC_TCS_BASE + 0x04)   /* a bit per TCS: done */
-#define RSC_IRQ_CLEAR           (RSC_TCS_BASE + 0x08)
-#define RSC_TCS(n)              (RSC_TCS_BASE + 672 * (n))
-#define TCS_WAIT_FOR_DONE       0x10
-#define TCS_CONTROL             0x14
-#define TCS_STATUS              0x18                    /* not zero: idle */
-#define TCS_ENABLED             0x1c
-#define TCS_COMMAND(c)          (0x30 + 20 * (c))       /* message id, address, value, status */
-#define TCS_ACTIVE_MODE         (1u << 16)
-#define TCS_TRIGGER             (1u << 24)
-#define MSGID_WRITE_WAITED      (8u | 1u << 8 | 1u << 16)       /* four bytes, an answer wanted, a write */
-#define RPMH_TCS                0                       /* the first of the two for requests made at once */
-
-/* The level position RPMh takes for that rail and level; -1: not found. */
-static int
-rail_position(const char *name, uint32_t level, uint32_t *address)
-{
-	char id[8] = { 0 };
-
-	if (cmd_db == NULL) {
-		cmd_db = (const struct cmd_db_header *)ml_io_map_unmappable(CMD_DB_PHYS, CMD_DB_SIZE, VM_WIMG_WCOMB);
-	}
-	if (!(cmd_db->magic[0] == 0xdb && cmd_db->magic[1] == 0x30 && cmd_db->magic[2] == 0x03 && cmd_db->magic[3] == 0x0c)) {
-		printf("adsp: %u: the boot loader's command database is not there\n", step);
-		return -1;
-	}
-	strlcpy(id, name, sizeof(id));
-	for (unsigned s = 0; s < 8; s++) {
-		const struct cmd_db_slave *slave = &cmd_db->slave[s];
-		const struct cmd_db_entry *entry = (const struct cmd_db_entry *)(cmd_db->data + slave->header_offset);
-
-		if (slave->id == 0 || slave->count > 512) {
-			continue;
-		}
-		for (unsigned i = 0; i < slave->count; i++) {
-			const uint8_t *data;
-			char levels[160];
-			int at;
-
-			if (memcmp(entry[i].id, id, sizeof(id)) != 0) {
-				continue;
-			}
-			if ((unsigned)slave->data_offset + entry[i].offset + entry[i].length > CMD_DB_SIZE - 0x1000) {
-				return -1;
-			}
-			data = cmd_db->data + slave->data_offset + entry[i].offset;
-			at = snprintf(levels, sizeof(levels), "%s at %#x, levels:", name, entry[i].address);
-			for (unsigned l = 0; l < entry[i].length / 2u && l < 16; l++) {
-				unsigned value = data[2 * l] | data[2 * l + 1] << 8;
-
-				if (l > 0 && value == 0) {
-					break;
-				}
-				at += snprintf(levels + at, sizeof(levels) - (size_t)at, " %u", value);
-			}
-			printf("adsp: %u: RPMh has %s\n", step, levels);
-			for (unsigned l = 0; l < entry[i].length / 2u && l < 16; l++) {
-				if ((uint32_t)(data[2 * l] | data[2 * l + 1] << 8) >= level) {
-					*address = entry[i].address;
-					return (int)l;
-				}
-			}
-			return -1;
-		}
-	}
-	printf("adsp: %u: RPMh has no \"%s\"\n", step, name);
-	return -1;
-}
-
-/* The two rails at that level (Linux's proxy request), or given back (level 0). True: RPMh has said done. */
+/* ---- IN2020 ARC proxy votes, shared with the tested touch TCS1 driver ---- */
+extern int in2020_rpmh_audio_vote(unsigned level);
 static bool
 rails(uint32_t level)
 {
-	static const char *const names[2] = { "lcx.lvl", "lmx.lvl" };
-	uint32_t addresses[2] = { 0, 0 }, values[2] = { 0, 0 }, done = 0;
-	uint64_t began;
-
-	for (unsigned r = 0; r < 2; r++) {
-		int position = level == 0 ? 0 : rail_position(names[r], level, &addresses[r]);
-
-		if (level == 0) {
-			rail_position(names[r], 0, &addresses[r]);
-		}
-		if (position < 0 || addresses[r] == 0) {
-			printf("adsp: %u: no position for %s at level %u: the rails are not asked\n", step, names[r], level);
-			return false;
-		}
-		values[r] = (uint32_t)position;
-	}
-	need(&rsc);
-	in2020_adsp_power_unavailable(true);                  /* apollo: sweet_rpmh.c's requests wait */
-	lck_mtx_lock(&hakios_rsc_lock);
-	/* (the boot loader leaves the trigger set after its last request, done: idle is what the status says) */
-	if (rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS) == 0) {
-		printf("adsp: %u: TCS %u of the sequencer is busy (status %#x, control %#x): the rails are not asked\n", step, RPMH_TCS,
-		    rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS), rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL));
-		lck_mtx_unlock(&hakios_rsc_lock);
-		in2020_adsp_power_unavailable(false);
-		return false;
-	}
-	printf("adsp: %u: about to ask RPMh, through TCS %u, for lcx.lvl (%#x) = %u and lmx.lvl (%#x) = %u (level %u%s)\n", step,
-	    RPMH_TCS, addresses[0], values[0], addresses[1], values[1], level, level == 0 ? ": given back" : "");
-	snprintf(last_write, sizeof(last_write), "step %u asked RPMh for the audio DSP's rails at level %u", step, level);
-	hold();
-	wr(rsc.base + RSC_IRQ_CLEAR, 1u << RPMH_TCS);
-	for (unsigned r = 0; r < 2; r++) {
-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r), MSGID_WRITE_WAITED);
-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r) + 4, addresses[r]);
-		wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(r) + 8, values[r]);
-	}
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_WAIT_FOR_DONE, 3);
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_ENABLED, 3);
-	settle();
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) & ~TCS_TRIGGER);
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) | TCS_ACTIVE_MODE);
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) | TCS_TRIGGER);
-	began = now_us();
-	while (now_us() - began < 100000) {
-		done = rd(rsc.base + RSC_IRQ_STATUS) & (1u << RPMH_TCS);
-		if (done) {
-			break;
-		}
-		sleep_us(50);
-	}
-	printf("adsp: %u: RPMh %s after %llu us; the commands' status %#x %#x, the TCS's %#x\n", step, done ? "HAS DONE IT" :
-	    "HAS NOT SAID DONE", now_us() - began, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(0) + 12),
-	    rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_COMMAND(1) + 12), rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_STATUS));
-	wr(rsc.base + RSC_IRQ_CLEAR, 1u << RPMH_TCS);
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL, rd(rsc.base + RSC_TCS(RPMH_TCS) + TCS_CONTROL) & ~(TCS_TRIGGER | TCS_ACTIVE_MODE));
-	wr(rsc.base + RSC_TCS(RPMH_TCS) + TCS_ENABLED, 0);
-	lck_mtx_unlock(&hakios_rsc_lock);
-	in2020_adsp_power_unavailable(false);
-	return done != 0;
+    int error = 0;
+    for (unsigned i = 0; i < 1000; ++i) {
+        error = in2020_rpmh_audio_vote(level);
+        if (error != EBUSY) break;
+        sleep_ms(1);
+    }
+    if (error) printf("IN2020 ADSP: ARC vote level=%u errno=%d\n", level, error);
+    return error == 0;
 }
 
 /* ---- step 1: the shared memory --------------------------------------------------------------------- */
@@ -1418,8 +1258,7 @@ dsp_shutdown(const char *why)
 	dsp_started = false;
 	mailbox_send("{class: image, res: load_state, name: adsp, val: off}");
 	if (rails_asked) {
-		rails(0);
-		rails_asked = false;
+		if (rails(0)) rails_asked = false;
 	}
 	return true;
 }
@@ -1834,8 +1673,7 @@ step_start(void)
 	}
 	rails_asked = true;
 	if (!mailbox_send("{class: image, res: load_state, name: adsp, val: on}")) {
-		rails(0);
-		rails_asked = false;
+		if (rails(0)) rails_asked = false;
 		lck_mtx_unlock(&dsp_lock);
 		return false;
 	}
@@ -1847,8 +1685,7 @@ step_start(void)
 		printf("adsp: %u: TRUSTZONE DOES NOT START THE AUDIO DSP: the call returns %d, its answer is %#llx\n", step, result,
 		    answer);
 		mailbox_send("{class: image, res: load_state, name: adsp, val: off}");
-		rails(0);
-		rails_asked = false;
+		if (rails(0)) rails_asked = false;
 		lck_mtx_unlock(&dsp_lock);
 		return false;
 	}
@@ -1888,8 +1725,7 @@ step_start(void)
 				    "given back\n", step, (now - started) / 1000, (now - started) % 1000);
 				lck_mtx_lock(&dsp_lock);
 				if (rails_asked) {
-					rails(0);
-					rails_asked = false;
+					if (rails(0)) rails_asked = false;
 				}
 				lck_mtx_unlock(&dsp_lock);
 			}
@@ -3351,6 +3187,7 @@ whole_thread(__unused void *parameter, __unused wait_result_t result)
 	for (unsigned waited = 0; waited < 300 && rootvnode == NULLVP; waited++) {
 		sleep_ms(200);
 	}
+	if (last_step >= 7) in2020_tfa_probe();
 	run_steps();
 	for (unsigned i = 0; i < sizeof(qrtr_servers) / sizeof(qrtr_servers[0]); i++) {
 		services += qrtr_servers[i].there;
@@ -3375,6 +3212,7 @@ steps_thread(__unused void *parameter, __unused wait_result_t result)
 	for (unsigned waited = 0; waited < 300 && rootvnode == NULLVP; waited++) {
 		sleep_ms(200);
 	}
+	if (last_step >= 7) in2020_tfa_probe();
 	run_steps();
 	printf("adsp: steps over\n");
 	thread_terminate(current_thread());
@@ -3388,19 +3226,19 @@ in2020_adsp_init(void)
     thread_t thread;
     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
     if (!requested) return;
-    if (requested > 2) {
-        printf("IN2020 ADSP: only read-only steps 1..2 are enabled; rejected %u\n", requested);
+    if (requested != 1 && requested != 2 && requested != 7 && requested != 11) {
+        printf("IN2020 ADSP: supported milestones are 1,2,7,11; rejected %u\n", requested);
         return;
     }
     adsp_memory = UMI_ADSP_MEMORY;
     adsp_memory_size = UMI_ADSP_SIZE;
     last_step = requested;
-    keep = false;
+    keep = (requested == 11);
     new_from = STEPS + 1;
     pause_ms = 0;
-    printf("IN2020 ADSP: read-only preflight steps=%u memory=%#x size=%#x\n",
+    printf("IN2020 ADSP: staged steps=%u memory=%#x size=%#x\n",
         last_step, adsp_memory, adsp_memory_size);
-    if (kernel_thread_start(steps_thread, NULL, &thread) != KERN_SUCCESS) {
+    if (kernel_thread_start(requested == 11 ? whole_thread : steps_thread, NULL, &thread) != KERN_SUCCESS) {
         printf("IN2020 ADSP: thread unavailable\n");
         return;
     }

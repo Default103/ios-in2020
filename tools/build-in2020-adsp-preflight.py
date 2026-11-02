@@ -1,4 +1,4 @@
-"""Build a temporary ADSP survey/firmware-validation boot; no speaker output."""
+"""Build a temporary ADSP milestone boot; no speaker output or camera capture."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -12,6 +12,7 @@ for name in ('workspace', 'kernel', 'out'):
     p.add_argument('--' + name, type=Path, required=True)
 for name in ('kernel-sha256', 'kernel-run', 'kernel-commit'):
     p.add_argument('--' + name, required=True)
+p.add_argument('--adsp-step', type=int, choices=(2, 7, 11), default=2)
 a = p.parse_args()
 r = a.workspace.resolve()
 digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -45,7 +46,7 @@ assert len(files) == 20
 root.children.append(node)
 encoded = adt.serialize(root)
 assert len(encoded) < 32 * 1024**2
-command = meta['cmdline'] + ' in2020adsp=2'
+command = meta['cmdline'] + ' in2020adsp=' + str(a.adsp_step)
 assert 'sweetkeys=1' in command and len(command.encode()) < 608
 a.out.mkdir(parents=True, exist_ok=False)
 dt = a.out / 'in2020-adsp.adt'
@@ -64,16 +65,18 @@ assert digest(old_boot) == 'bc7664b7d7d015c7a1e74790c95db3e05d6c62b516a32d77530b
 ks = struct.unpack_from('<I', old_boot, 8)[0]
 assert old_boot[4096:4096 + ks] == (baseline / 'baseline-loader.Image').read_bytes()
 helpers = runpy.run_path(str(r / 'scripts/boot-image-tools.py'))
-boot = a.out / 'in2020-ios16-adsp-readonly-boot.img'
+boot = a.out / ('in2020-ios16-adsp-readonly-boot.img' if a.adsp_step == 2 else
+                'in2020-ios16-adsp-step' + str(a.adsp_step) + '-boot.img')
 helpers['pack_boot'](r, baseline / 'baseline-loader.Image', payload, boot)
 record = dict(status='BUILT_NOT_PHONE_TESTED', kernel_run=a.kernel_run,
               kernel_commit=a.kernel_commit, kernel_sha256=a.kernel_sha256,
               boot_sha256=digest(boot.read_bytes()), boot_size=boot.stat().st_size,
               adt_size=len(encoded), cmdline=command, cmdline_bytes=len(command.encode()),
-              firmware=files, adsp_steps=2, dsp_start_enabled=False,
+              firmware=files, adsp_steps=a.adsp_step, dsp_start_enabled=a.adsp_step >= 7,
+              amplifier_identity_probe_enabled=a.adsp_step >= 7,
               speaker_output_implemented=False, camera_capture_implemented=False,
               library_updater_present=False, temporary_boot_only=True)
 (a.out / 'verification.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
 for path in (dt, payload, boot):
     path.chmod(0o444)
-print('ADSP read-only candidate', record['boot_sha256'], record['cmdline_bytes'], 'command bytes')
+print('ADSP step', a.adsp_step, record['boot_sha256'], record['cmdline_bytes'], 'command bytes')

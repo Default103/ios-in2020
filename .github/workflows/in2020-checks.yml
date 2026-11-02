@@ -28,6 +28,8 @@ jobs:
           python3 tools/check-in2020-audio.py
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/mdt_test.c -o mdt-test
           ./mdt-test
+          clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/arc_test.c -o arc-test
+          ./arc-test
       - name: Test fixed camera probe packet ABI
         run: |
           clang -DIN2020_PROBE_HOST_TEST -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o camera-packet-test

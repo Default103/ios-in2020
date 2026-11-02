@@ -51,12 +51,6 @@ hakios_image_file(const char *dir, const char *name, uint64_t *size, int *disk_o
     return value;
 }
 
-/* The staged port cannot reach power control. Fail closed if that changes. */
-void in2020_adsp_power_unavailable(bool hold);
-void in2020_adsp_power_unavailable(__unused bool hold)
-{
-    panic("IN2020 ADSP: power path is not enabled by preflight");
-}
 
 void
 hakios_battery_report(const struct hakios_battery_state *state)
