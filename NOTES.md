@@ -1,3 +1,7 @@
+## 2026-11-02 silent PCM full CI RUNNING; host checks PASS
+
+Source4111120cde717b7574aa56d1c1e7a8985792da9d pushed. Native41536712878 Intel fullbuildrunning, host/check41536713530SUCCESS with previousAFEkernel41496215362 forQEMU(consoleonly). AwaitnewnativeSHA/artifacts,package13onlyafterCIpasses,thenuniqueTWRP->FBKona temporaryboot,USERreturnforlogs. PhoneLEFTTWRP, no furtherhardwarewritesafterAFElogcapture. Relevantdetailsdirectlybelow.
+
 ## 2026-11-02 silent AFE PASS; PCM SOURCE PREPARED
 
 USERreturnedFB;verifiedTWRPtempboot1.647s. Readonly logs/afe-port12-20261102:454507bytes17flushnowrap rawSHA13b10e3c56375ce8089e79a509f8f7812742c7aa3d0f2a379b364f9149cfdc87. ALL5AFEactions(clockon/config/start/stop/off)BASICreplyecho/status0. GPIO133/134/135/137initialcfg1, BCLK4821changes/WS1951in20ksamples(ACTIVITYONLY/notfrequency),all4restore1. BothampsID+PWDN1AMPE0 verifiedbeforeandafter. Finalstart1stop1clock-off1amps-off1. DSP/APRstillpassed. NoPCM/AMPoutputthisboot. PhoneLEFTTWRP.

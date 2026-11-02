@@ -266,3 +266,31 @@ limit and boot hash were checked. Temporary boot returned Sending/Booting OKAY
 in 0.899s. User was asked to return after about two minutes. No subsequent
 phone command was issued; port/clock responses, pad activity and cleanup are
 not yet verified. This image has no PCM stream or amplifier-enable operation.
+
+## Silent AFE PASS; PCM transport test source ready
+
+Returned-device read-only capture `logs/afe-port12-20261102`: 454507 bytes,
+17 flushes, no wrap, raw SHA256
+13b10e3c56375ce8089e79a509f8f7812742c7aa3d0f2a379b364f9149cfdc87.
+Clock on, I2S configuration, device start, device stop and clock off all returned
+APR basic responses echoing the command with status 0. BCLK and WS sampling
+recorded 4821 and 1951 changes respectively in 20000 samples; this demonstrates
+pad activity, not clock frequency. All four pin configurations/latches restored
+successfully. Both amplifiers were proven PWDN=1/AMPE=0 before and afterward.
+Final result start/stop/clock-off/amps-off was 1/1/1/1.
+
+Source 4111120 adds milestone 13: a silent 64-period PCM test through isolated
+apps-SMMU memory, ASM mapping/session, ADM routing and DMA completion events.
+It refuses existing SID 0x1801 mappings and uses only an unused SMR plus a
+disabled empty context beyond stage-2-only banks. No active context is replaced.
+Confirmed DSP close/unmap precedes restoring translation controls; uncertain
+cleanup retains memory and mappings until reset. Completion messages require
+the current generation token, matching address/handle and sufficient length;
+ordinary command acknowledgements never recycle a DMA slot. APR also drops
+undersized or truncated packet headers before copying payloads.
+
+All six actual-XNU-header cross-compiles and zero-fuzz patch/source consistency
+checks passed locally. Host/check run 41536713530 passed (its QEMU part uses
+the earlier AFE kernel for console reachability only). Full kernel run
+41536712878 is building. No PCM hardware result is available yet, and no
+amplifier enable or audible output is added.
