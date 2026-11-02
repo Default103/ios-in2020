@@ -1,0 +1,322 @@
+--- a/bsd/dev/in2020_adsp.c
++++ b/bsd/dev/in2020_adsp.c
+@@ -3231,8 +3231,8 @@
+     thread_t thread;
+     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
+     if (!requested) return;
+-    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13) {
+-        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13; rejected %u\n", requested);
++    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13 && requested != 14) {
++        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13,14; rejected %u\n", requested);
+         return;
+     }
+     adsp_memory = UMI_ADSP_MEMORY;
+--- a/bsd/dev/in2020_afe.c
++++ b/bsd/dev/in2020_afe.c
+@@ -1,5 +1,5 @@
+-/* IN2020 silent tertiary MI2S diagnostics. No amplifier data writes or iOS sink.
+- * Milestone 12 tests the port; 13 additionally tests silent PCM after APR ready.
++/* IN2020 tertiary MI2S diagnostics, no iOS sink.
++ * 12 tests a silent port, 13 silent PCM, 14 a bounded audible speaker test.
+  * Live FDT + pinned OnePlus pinctrl-kona.c: WEST GPIO133/134/135 func1,
+  * GPIO137 func3, 8mA, no pull. Both TFA9874 must first be proven powered down.
+  */
+@@ -13,6 +13,7 @@
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern bool in2020_tfa_confirm_off(void);
+ extern bool in2020_pcm_probe(void);
++extern void in2020_speaker_tone(void);
+ void in2020_afe_probe(void);
+ static vm_offset_t tlmm;
+ static uint32_t configs[4], outputs[4];
+@@ -71,8 +72,9 @@
+ void in2020_afe_probe(void) {
+     unsigned requested=0;
+     (void)PE_parse_boot_argn("in2020adsp",&requested,sizeof(requested));
+-    if(requested!=12 && requested!=13)return;
+-    printf("IN2020 AFE: milestone=%u silent test; amplifiers remain off\n",requested);
++    if(requested!=12 && requested!=13 && requested!=14)return;
++    printf("IN2020 AFE: milestone=%u %s\n",requested,
++        requested==14 ? "audible speaker test requested" : "silent test; amplifiers remain off");
+     if(!in2020_tfa_confirm_off())return;
+     int pins_result=take_pins();
+     if(pins_result!=1) {
+@@ -94,12 +96,13 @@
+         printf("IN2020 AFE: pin samples BCLK changes=%u ones=%u WS changes=%u ones=%u; not a rate measurement\n",
+             changes[0],ones[0],changes[1],ones[1]);
+         if(requested==13)printf("IN2020 AFE: silent PCM transport result=%d\n",in2020_pcm_probe());
++        if(requested==14)in2020_speaker_tone();
+     }
+     bool stopped=!port_attempted || send(IN2020_AFE_STOP);
+     bool clock_off=!clock_attempted || send(IN2020_AFE_CLOCK_OFF);
+     if(stopped && clock_off)restore_pins();
+     else printf("IN2020 AFE: uncertain shutdown; preserve peripheral mux, no retry or stream\n");
+     bool amps_off=in2020_tfa_confirm_off();
+-    printf("IN2020 AFE: result start=%d stop=%d clock-off=%d amps-off=%d; no sound output\n",
+-        started,stopped,clock_off,amps_off);
++    printf("IN2020 AFE: result start=%d stop=%d clock-off=%d amps-off=%d; %s\n",
++        started,stopped,clock_off,amps_off,requested==14 ? "tone test ended" : "no sound output");
+ }
+--- a/bsd/dev/in2020_tfa.c
++++ b/bsd/dev/in2020_tfa.c
+@@ -1,4 +1,5 @@
+-/* IN2020 TFA9874 identity/OTP-status reads, no amplifier programming.
++/* IN2020 TFA9874 transport: read-only identity probes, plus fixed-register
++ * writes used only by the gated audible diagnostic. No OTP programming API.
+  * Live FDT: I2C@884000 uses GPIO44/45 (QUP15), SOUTH TLMM tile.
+  * Pin tile/control semantics: pinned OnePlus pinctrl-kona.c; open-drain
+  * transaction method matches the phone-tested SEC touch transport.
+@@ -8,9 +9,12 @@
+ #include <sys/systm.h>
+ #include <kern/clock.h>
+ #include <machine/machine_routines.h>
++#include "in2020_speaker_profile.h"
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ void in2020_tfa_probe(void);
+ bool in2020_tfa_confirm_off(void);
++bool in2020_tfa_read16(unsigned,unsigned,uint16_t *);
++bool in2020_tfa_write16(unsigned,unsigned,uint16_t);
+ static vm_offset_t pins;
+ static uint32_t saved_cfg[2], saved_io[2];
+ static uint64_t deadline, frequency;
+@@ -63,7 +67,7 @@
+     line(1,false);line(0,true);*value=v;return true;
+ }
+ static bool read_register(unsigned address,unsigned reg,uint16_t *value) {
+-    if((address!=0x34 && address!=0x35) || (reg!=0 && reg!=3 && reg!=0xf0 && reg!=0xf5))return false;
++    if((address!=0x34 && address!=0x35) || reg>255)return false;
+     for(unsigned p=0;p<2;++p) {saved_cfg[p]=pin_read(p,0);saved_io[p]=pin_read(p,4);}
+     if(!level(0) || !level(1)) {printf("IN2020 TFA: bus not idle; untouched\n");return false;}
+     for(unsigned p=0;p<2;++p) {
+@@ -115,3 +119,23 @@
+     }
+     return true;
+ }
++bool in2020_tfa_read16(unsigned address,unsigned reg,uint16_t *value) {
++    return pins && frequency==19200000 && value && read_register(address,reg,value);
++}
++bool in2020_tfa_write16(unsigned address,unsigned reg,uint16_t value) {
++    if(!pins || frequency!=19200000 || (address!=0x34 && address!=0x35))return false;
++    /* No OTP row/copy/calibration registers. OCP bypass/test cannot be set. */
++    if(!(reg==0 || reg==1 || reg==0x0f || reg==0xa0 || reg==0xa1 || sp_config_register(reg)))return false;
++    if((reg==0 && (value&0x1800)) || (reg==1 && (value&0x4000)))return false;
++    for(unsigned p=0;p<2;++p) {saved_cfg[p]=pin_read(p,0);saved_io[p]=pin_read(p,4);}
++    if(!level(0) || !level(1))return false;
++    for(unsigned p=0;p<2;++p)if(((saved_cfg[p]>>2)&15)>1)return false;
++    deadline=ticks()+frequency/10;
++    bool ok=start() && put((uint8_t)(address<<1)) && put((uint8_t)reg) &&
++        put((uint8_t)(value>>8)) && put((uint8_t)value);
++    stop();
++    for(unsigned p=0;p<2;++p) {
++        line(p,true);pin_write(p,4,(pin_read(p,4)&~2u)|(saved_io[p]&2));pin_write(p,0,saved_cfg[p]);
++    }
++    return ok;
++}
+--- /dev/null
++++ b/bsd/dev/in2020_speaker.c
+@@ -0,0 +1,156 @@
++/* Bounded low-level audible diagnostic for IN2020's two TFA9874 0x0c74.
++ * Uses the phone's pinned speaker profile plus original NXP revision settings.
++ * Existing factory R25 only; no MTP/OTP copy, recalibration or protection bypass.
++ * DSP AFE finite DTMF generator avoids dependence on unverified PCM DMA.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <pexpert/device_tree.h>
++#include "hakios.audio.h"
++#include "in2020_afe_packet.h"
++#include "in2020_speaker_profile.h"
++extern bool in2020_tfa_read16(unsigned,unsigned,uint16_t *);
++extern bool in2020_tfa_write16(unsigned,unsigned,uint16_t);
++extern bool in2020_tfa_confirm_off(void);
++void in2020_speaker_tone(void);
++static uint16_t mtp[2],r25[2];
++static bool write_reg(unsigned a,unsigned r,uint16_t value) {
++    if(!in2020_tfa_write16(a,r,value)) {
++        printf("IN2020 SPEAKER: write failed addr=%#x reg=%#x\n",a,r);return false;
++    }
++    if(r==0x0f || r==0xa0 || r==0xa1 || (r==0 && (value&2)))return true;
++    uint16_t back=0;bool ok=in2020_tfa_read16(a,r,&back) && back==value;
++    if(!ok)printf("IN2020 SPEAKER: readback failed addr=%#x reg=%#x want=%#x got=%#x\n",a,r,value,back);
++    return ok;
++}
++static bool bits(unsigned a,unsigned r,uint16_t mask,uint16_t value) {
++    uint16_t old=0;
++    if(!in2020_tfa_read16(a,r,&old)) {
++        printf("IN2020 SPEAKER: read failed addr=%#x reg=%#x\n",a,r);return false;
++    }
++    return write_reg(a,r,(uint16_t)((old&~mask)|(value&mask)));
++}
++static bool apr(uint32_t op,const void *p,unsigned n) {
++    struct hakios_apr_answer a={0};
++    bool ok=hakios_adsp_apr(4,0,0,op,p,n,1000,&a) && a.opcode==0x110e8 &&
++        a.length>=8 && a.words[0]==op && a.words[1]==0;
++    printf("IN2020 SPEAKER: APR %#x ok=%d reply=%#x status=%#x\n",op,ok,a.opcode,a.words[1]);return ok;
++}
++static bool tx(enum in2020_afe_action action) {
++    struct in2020_afe_packet p;
++    if(!in2020_afe_packet(action,&p))return false;
++    afe_put16(p.data,0x1005);
++    if(action==IN2020_AFE_CONFIG)afe_put16(p.data+34,1); /* SD0: stock TX mask 1 */
++    return apr(p.opcode,p.data,p.size);
++}
++static bool parameter(unsigned port,uint32_t module,uint32_t id,const uint8_t *data,unsigned n) {
++    uint8_t p[64]={0};if(n>36)return false;
++    printf("IN2020 SPEAKER: set-param port=%#x module=%#x param=%#x bytes=%u\n",port,module,id,n);
++    afe_put16(p,(uint16_t)port);afe_put16(p+2,(uint16_t)(12+n));
++    afe_put32(p+16,module);afe_put32(p+20,id);afe_put16(p+24,(uint16_t)n);
++    memcpy(p+28,data,n);return apr(0x100ef,p,28+n);
++}
++static bool calibrations(void) {
++    uint8_t p[9]={0,0x81,5};
++    for(unsigned d=0;d<2;++d) {
++        uint32_t q=(uint32_t)r25[d]*65536u/1000u;
++        p[3+d*3]=(uint8_t)(q>>16);p[4+d*3]=(uint8_t)(q>>8);p[5+d*3]=(uint8_t)q;
++    }
++    return parameter(0x1004,0x1000b911,0x1000b921,p,sizeof(p));
++}
++static bool configure(unsigned a,const uint8_t *ops) {
++    static const uint16_t optimal[][2]={
++        {2,0x22c8},{0x52,0x57dc},{0x53,0x003e},{0x56,0x0400},{0x61,0x0110},
++        {0x6f,0x00a5},{0x70,0x07f8},{0x73,0x0047},{0x74,0x5098},{0x75,0x8d28},
++        {0x80,0},{0x83,0x0799},{0x84,0x0081}};
++    if(!write_reg(a,0,2))return false; /* original I2CR reset, does not write OTP */
++    delay_for_interval(1,NSEC_PER_MSEC);
++    uint16_t ctrl=0,key=0;
++    if(!in2020_tfa_read16(a,0,&ctrl) || (ctrl&9)!=1 ||
++       !write_reg(a,0x0f,0x5a6b) || !in2020_tfa_read16(a,0xfb,&key) ||
++       !write_reg(a,0xa0,(uint16_t)(key^0x5a)) || !write_reg(a,0xa1,0x5a) || !write_reg(a,0x0f,0))return false;
++    for(unsigned i=0;i<sizeof(optimal)/sizeof(optimal[0]);++i)
++        if(!write_reg(a,optimal[i][0],optimal[i][1]))return false;
++    for(unsigned i=0;i<57;++i) {
++        const uint8_t *p=ops+8*i;unsigned r=sp16(p),mask=sp16(p+2),v=sp16(p+4);
++        if(mask==0xffff) {if(!write_reg(a,r,(uint16_t)v))return false;}
++        else if(!bits(a,r,(uint16_t)mask,(uint16_t)v))return false;
++    }
++    /* Lock programming key again, explicitly protect FAIM, configured state. */
++    if(!write_reg(a,0xa1,0) || !write_reg(a,0x0f,0) || !bits(a,1,0x4004,4) ||
++       !bits(a,0,9,0))return false;
++    for(unsigned i=0;i<50;++i) {
++        uint16_t status=0;
++        if(!in2020_tfa_read16(a,0x11,&status))return false;
++        if((status&0xc0)==0xc0) {printf("IN2020 SPEAKER: %#x configured, PLL/clock stable\n",a);return true;}
++        delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    return false;
++}
++static void off(void) {
++    for(unsigned a=0x34;a<=0x35;++a) {
++        bool muted=bits(a,0,8,0),down=bits(a,0,1,1);
++        (void)write_reg(a,0xa1,0);(void)write_reg(a,0x0f,0);
++        printf("IN2020 SPEAKER: %#x mute=%d powerdown=%d\n",a,muted,down);
++    }
++}
++static bool tone(unsigned ms,unsigned gain) {
++    uint8_t p[20]={0};afe_put32(p,ms);afe_put16(p+8,1209);afe_put16(p+10,697);
++    afe_put16(p+12,(uint16_t)gain);afe_put16(p+14,1);afe_put16(p+16,0x1004);
++    return apr(0x10102,p,sizeof(p));
++}
++void in2020_speaker_tone(void) {
++    DTEntry node;const void *value=NULL;unsigned n=0;bool tx_attempted=false,played=false;
++    printf("IN2020 SPEAKER: finite low-level audible test; no iOS audio bridge\n");
++    if(!in2020_tfa_confirm_off() || SecureDTLookupEntry(NULL,"/in2020-adsp",&node)!=kSuccess ||
++       SecureDTGetProperty(node,"tfa-speaker-ops",&value,&n)!=kSuccess ||
++       !in2020_speaker_profile(value,n)) {printf("IN2020 SPEAKER: profile/off gate failed\n");return;}
++    const uint8_t *profile=value;
++    /* Give the user time to hear the brief test after the iOS boot begins. */
++    delay_for_interval(20,NSEC_PER_SEC);
++    for(unsigned d=0;d<2;++d) {
++        uint16_t id=0;
++        if(!in2020_tfa_read16(0x34+d,3,&id) || id!=0x0c74 ||
++           !in2020_tfa_read16(0x34+d,0xf0,&mtp[d]) || (mtp[d]&3)!=3 ||
++           !in2020_tfa_read16(0x34+d,0xf5,&r25[d]) || r25[d]<=4000 || r25[d]>16000)return;
++    }
++    for(unsigned d=0;d<2;++d)if(!configure(0x34+d,profile+24+d*460)) {
++        printf("IN2020 SPEAKER: configuration failed addr=%#x\n",0x34+d);goto end;
++    }
++    if(!tx(IN2020_AFE_CONFIG))goto end;
++    tx_attempted=true;if(!tx(IN2020_AFE_START))goto end;
++    uint8_t enable[4]={1,0,0,0};
++    if(!parameter(0x1005,0x1000b912,0x1000b920,enable,sizeof(enable)) || !calibrations())goto end;
++    for(unsigned a=0x34;a<=0x35;++a)if(!bits(a,0,8,8))goto end;
++    for(unsigned d=0;d<2;++d) {
++        bool operating=false;
++        for(unsigned i=0;i<50;++i) {
++            uint16_t s=0;if(!in2020_tfa_read16(0x34+d,0x13,&s))goto end;
++            if(s&0x8000) {operating=true;break;}
++            delay_for_interval(1,NSEC_PER_MSEC);
++        }
++        if(!operating) {printf("IN2020 SPEAKER: operating-state timeout addr=%#x\n",0x34+d);goto end;}
++    }
++    /* Q13 gain 128, finite 750ms dual tone. Never continuous or full-scale. */
++    for(unsigned beep=0;beep<2;++beep) {
++      played=tone(750,128);if(!played)goto end;
++      for(unsigned i=0;i<85;++i) {
++        for(unsigned a=0x34;a<=0x35;++a) {
++            uint16_t s=0;if(!in2020_tfa_read16(a,0x11,&s) || !(s&0x80))goto end;
++        }
++        delay_for_interval(10,NSEC_PER_MSEC);
++      }
++    }
++end:
++    (void)tone(0,0);off();
++    if(tx_attempted)(void)tx(IN2020_AFE_STOP);
++    bool unchanged=true;
++    for(unsigned d=0;d<2;++d) {
++        uint16_t m=0,r=0;
++        unchanged&=in2020_tfa_read16(0x34+d,0xf0,&m) && m==mtp[d] &&
++            in2020_tfa_read16(0x34+d,0xf5,&r) && r==r25[d];
++    }
++    printf("IN2020 SPEAKER: tone-command-accepted=%d amps-off=%d calibration-unchanged=%d; audible result needs observation\n",
++        played,in2020_tfa_confirm_off(),unchanged);
++}
+--- /dev/null
++++ b/bsd/dev/in2020_speaker_profile.h
+@@ -0,0 +1,36 @@
++#ifndef IN2020_SPEAKER_PROFILE_H
++#define IN2020_SPEAKER_PROFILE_H
++#include <stdint.h>
++#include <stdbool.h>
++static inline unsigned sp16(const uint8_t *p) {return p[0]|((unsigned)p[1]<<8);}
++static inline uint32_t sp32(const uint8_t *p) {return sp16(p)|((uint32_t)sp16(p+2)<<16);}
++static inline bool sp_config_register(unsigned r) {
++    return r==2 || r==4 || (r>=0x20 && r<=0x28) || (r>=0x50 && r<=0x58) ||
++        r==0x61 || r==0x62 || r==0x64 || r==0x68 || (r>=0x6f && r<=0x76) ||
++        r==0x80 || (r>=0x83 && r<=0x88) || r==0xb0 || r==0xc4;
++}
++static inline bool in2020_speaker_profile(const uint8_t *p,unsigned n) {
++    static const uint8_t magic[8]={'T','F','S','P','0','0','0','1'};
++    if(!p || n!=940 || sp32(p+8)!=n || sp32(p+16)!=2)return false;
++    for(unsigned i=0;i<8;++i)if(p[i]!=magic[i])return false;
++    uint32_t crc=~0u;
++    for(unsigned i=16;i<n;++i) {
++        crc^=p[i];for(unsigned b=0;b<8;++b)crc=(crc>>1)^(0xedb88320u&(0u-(crc&1)));
++    }
++    if((~crc)!=sp32(p+12))return false;
++    for(unsigned d=0;d<2;++d) {
++        unsigned at=20+d*460;
++        if(sp16(p+at)!=0x34+d || sp16(p+at+2)!=57)return false;
++        for(unsigned i=0;i<57;++i) {
++            const uint8_t *q=p+at+4+8*i;
++            unsigned r=sp16(q),mask=sp16(q+2),value=sp16(q+4);
++            if(sp16(q+6) || !mask || (value&~mask))return false;
++            if(r==0) {if(mask!=0x10 || value!=0x10)return false;} /* stock DCA only */
++            else if(r==0x0f) {if(mask!=0xffff || value!=0x5a6b)return false;}
++            else if(r==0xa0 || r==0xa1) {if(mask!=0xffff || value!=0x5a)return false;}
++            else if(!sp_config_register(r))return false;
++        }
++    }
++    return true;
++}
++#endif
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -119,6 +119,7 @@
+ bsd/dev/in2020_tfa.c		standard
+ bsd/dev/in2020_afe.c		standard
+ bsd/dev/in2020_pcm.c		standard
++bsd/dev/in2020_speaker.c		standard
+ bsd/dev/mem.c				standard
+ bsd/dev/munge.c 			optional config_requires_u32_munging
+ bsd/dev/unix_startup.c			standard

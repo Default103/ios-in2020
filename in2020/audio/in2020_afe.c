@@ -1,5 +1,5 @@
-/* IN2020 silent tertiary MI2S diagnostics. No amplifier data writes or iOS sink.
- * Milestone 12 tests the port; 13 additionally tests silent PCM after APR ready.
+/* IN2020 tertiary MI2S diagnostics, no iOS sink.
+ * 12 tests a silent port, 13 silent PCM, 14 a bounded audible speaker test.
  * Live FDT + pinned OnePlus pinctrl-kona.c: WEST GPIO133/134/135 func1,
  * GPIO137 func3, 8mA, no pull. Both TFA9874 must first be proven powered down.
  */
@@ -13,6 +13,7 @@
 extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern bool in2020_tfa_confirm_off(void);
 extern bool in2020_pcm_probe(void);
+extern void in2020_speaker_tone(void);
 void in2020_afe_probe(void);
 static vm_offset_t tlmm;
 static uint32_t configs[4], outputs[4];
@@ -71,8 +72,9 @@ static void restore_pins(void) {
 void in2020_afe_probe(void) {
     unsigned requested=0;
     (void)PE_parse_boot_argn("in2020adsp",&requested,sizeof(requested));
-    if(requested!=12 && requested!=13)return;
-    printf("IN2020 AFE: milestone=%u silent test; amplifiers remain off\n",requested);
+    if(requested!=12 && requested!=13 && requested!=14)return;
+    printf("IN2020 AFE: milestone=%u %s\n",requested,
+        requested==14 ? "audible speaker test requested" : "silent test; amplifiers remain off");
     if(!in2020_tfa_confirm_off())return;
     int pins_result=take_pins();
     if(pins_result!=1) {
@@ -94,12 +96,13 @@ void in2020_afe_probe(void) {
         printf("IN2020 AFE: pin samples BCLK changes=%u ones=%u WS changes=%u ones=%u; not a rate measurement\n",
             changes[0],ones[0],changes[1],ones[1]);
         if(requested==13)printf("IN2020 AFE: silent PCM transport result=%d\n",in2020_pcm_probe());
+        if(requested==14)in2020_speaker_tone();
     }
     bool stopped=!port_attempted || send(IN2020_AFE_STOP);
     bool clock_off=!clock_attempted || send(IN2020_AFE_CLOCK_OFF);
     if(stopped && clock_off)restore_pins();
     else printf("IN2020 AFE: uncertain shutdown; preserve peripheral mux, no retry or stream\n");
     bool amps_off=in2020_tfa_confirm_off();
-    printf("IN2020 AFE: result start=%d stop=%d clock-off=%d amps-off=%d; no sound output\n",
-        started,stopped,clock_off,amps_off);
+    printf("IN2020 AFE: result start=%d stop=%d clock-off=%d amps-off=%d; %s\n",
+        started,stopped,clock_off,amps_off,requested==14 ? "tone test ended" : "no sound output");
 }

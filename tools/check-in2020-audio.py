@@ -4,7 +4,8 @@ import re
 root = Path(__file__).resolve().parents[1]
 names = ('in2020_adsp.c', 'in2020_audio_glue.c', 'hakios.audio.h',
          'hakios.input.h', 'in2020_mdt.h', 'in2020_rpmh.c', 'in2020_arc.h', 'in2020_tfa.c',
-         'in2020_afe.c', 'in2020_afe_packet.h', 'in2020_pcm.c', 'in2020_pcm_event.h')
+         'in2020_afe.c', 'in2020_afe_packet.h', 'in2020_pcm.c', 'in2020_pcm_event.h',
+         'in2020_speaker.c', 'in2020_speaker_profile.h')
 state = {}
 for patch in sorted((root / 'xnu/patches').glob('*.patch')):
     if int(patch.name[:4]) < 123:

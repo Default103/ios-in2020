@@ -1,4 +1,4 @@
-"""Build a temporary ADSP milestone boot; no speaker output or camera capture."""
+"""Build a temporary staged audio boot, including the gated audible test at 14."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -12,7 +12,7 @@ for name in ('workspace', 'kernel', 'out'):
     p.add_argument('--' + name, type=Path, required=True)
 for name in ('kernel-sha256', 'kernel-run', 'kernel-commit'):
     p.add_argument('--' + name, required=True)
-p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12, 13), default=2)
+p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12, 13, 14), default=2)
 a = p.parse_args()
 r = a.workspace.resolve()
 digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -43,6 +43,11 @@ for item in json.loads(manifest):
     node.props.append((name, 0, data))
     files.append(item)
 assert len(files) == 20
+speaker_profile = None
+if a.adsp_step == 14:
+    speaker_profile = runpy.run_path(str(Path(__file__).with_name('build-in2020-speaker-profile.py')))['build'](
+        (r / 'firmware/in2020-audio-stock-20261102/tfa98xx.cnt').read_bytes())
+    node.props.append(('tfa-speaker-ops', 0, speaker_profile))
 root.children.append(node)
 encoded = adt.serialize(root)
 assert len(encoded) < 32 * 1024**2
@@ -74,6 +79,8 @@ record = dict(status='BUILT_NOT_PHONE_TESTED', kernel_run=a.kernel_run,
               adt_size=len(encoded), cmdline=command, cmdline_bytes=len(command.encode()),
               firmware=files, adsp_steps=min(a.adsp_step, 11), adsp_milestone=a.adsp_step,
               afe_port_test_enabled=a.adsp_step >= 12, pcm_transport_test_enabled=a.adsp_step == 13,
+              audible_tone_test_enabled=a.adsp_step == 14,
+              speaker_profile_sha256=digest(speaker_profile) if speaker_profile else None,
               dsp_start_enabled=a.adsp_step >= 7,
               amplifier_identity_probe_enabled=a.adsp_step >= 7,
               speaker_output_implemented=False, camera_capture_implemented=False,

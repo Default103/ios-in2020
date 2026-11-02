@@ -85,3 +85,17 @@ map handle and payload length. An ordinary command ACK cannot recycle a buffer.
 Unit fixtures cover stale generations and malformed responses. No amplifier
 enable, tone, protection bypass, iOS device node or audio plug-in is added.
 
+Milestone 14 is a separate requested audible prototype. After the proven APR/
+AFE startup it uses the DSP's finite DTMF generator directly on port 0x1004,
+without invoking the unverified PCM/SMMU test. The builder derives a private
+940-byte speaker-only operation list from the pinned local CNT; calibration
+profiles and dummy patches are not executed. CRC, device/count/operation bounds
+and an explicit register whitelist are checked before setup. Public NXP 0x0c74
+revision settings and this phone's speaker settings are used, followed by TX
+feedback port setup, existing nonzero R25 values sent to TFADSP, and amplifier
+enable only after those commands succeed. No OCP bypass or OTP copy/register
+programming is exposed. After about 20 seconds, two finite 750ms low-gain tones
+are attempted; tone stop, amplifier mute/powerdown and TX stop follow. The
+ordinary AFE cleanup then stops RX, disables its clock and restores pins.
+This is not continuous iOS audio support, and audibility requires observation.
+

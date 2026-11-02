@@ -1,4 +1,5 @@
-/* IN2020 TFA9874 identity/OTP-status reads, no amplifier programming.
+/* IN2020 TFA9874 transport: read-only identity probes, plus fixed-register
+ * writes used only by the gated audible diagnostic. No OTP programming API.
  * Live FDT: I2C@884000 uses GPIO44/45 (QUP15), SOUTH TLMM tile.
  * Pin tile/control semantics: pinned OnePlus pinctrl-kona.c; open-drain
  * transaction method matches the phone-tested SEC touch transport.
@@ -8,9 +9,12 @@
 #include <sys/systm.h>
 #include <kern/clock.h>
 #include <machine/machine_routines.h>
+#include "in2020_speaker_profile.h"
 extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 void in2020_tfa_probe(void);
 bool in2020_tfa_confirm_off(void);
+bool in2020_tfa_read16(unsigned,unsigned,uint16_t *);
+bool in2020_tfa_write16(unsigned,unsigned,uint16_t);
 static vm_offset_t pins;
 static uint32_t saved_cfg[2], saved_io[2];
 static uint64_t deadline, frequency;
@@ -63,7 +67,7 @@ static bool get(uint8_t *value,bool ack) {
     line(1,false);line(0,true);*value=v;return true;
 }
 static bool read_register(unsigned address,unsigned reg,uint16_t *value) {
-    if((address!=0x34 && address!=0x35) || (reg!=0 && reg!=3 && reg!=0xf0 && reg!=0xf5))return false;
+    if((address!=0x34 && address!=0x35) || reg>255)return false;
     for(unsigned p=0;p<2;++p) {saved_cfg[p]=pin_read(p,0);saved_io[p]=pin_read(p,4);}
     if(!level(0) || !level(1)) {printf("IN2020 TFA: bus not idle; untouched\n");return false;}
     for(unsigned p=0;p<2;++p) {
@@ -114,4 +118,24 @@ bool in2020_tfa_confirm_off(void) {
         printf("IN2020 AFE: amplifier %#x PWDN=1 AMPE=0 verified\n",address);
     }
     return true;
+}
+bool in2020_tfa_read16(unsigned address,unsigned reg,uint16_t *value) {
+    return pins && frequency==19200000 && value && read_register(address,reg,value);
+}
+bool in2020_tfa_write16(unsigned address,unsigned reg,uint16_t value) {
+    if(!pins || frequency!=19200000 || (address!=0x34 && address!=0x35))return false;
+    /* No OTP row/copy/calibration registers. OCP bypass/test cannot be set. */
+    if(!(reg==0 || reg==1 || reg==0x0f || reg==0xa0 || reg==0xa1 || sp_config_register(reg)))return false;
+    if((reg==0 && (value&0x1800)) || (reg==1 && (value&0x4000)))return false;
+    for(unsigned p=0;p<2;++p) {saved_cfg[p]=pin_read(p,0);saved_io[p]=pin_read(p,4);}
+    if(!level(0) || !level(1))return false;
+    for(unsigned p=0;p<2;++p)if(((saved_cfg[p]>>2)&15)>1)return false;
+    deadline=ticks()+frequency/10;
+    bool ok=start() && put((uint8_t)(address<<1)) && put((uint8_t)reg) &&
+        put((uint8_t)(value>>8)) && put((uint8_t)value);
+    stop();
+    for(unsigned p=0;p<2;++p) {
+        line(p,true);pin_write(p,4,(pin_read(p,4)&~2u)|(saved_io[p]&2));pin_write(p,0,saved_cfg[p]);
+    }
+    return ok;
 }

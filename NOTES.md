@@ -1,3 +1,11 @@
+## 2026-11-02 USER requests direct AUDIBLE image+boot; source READY
+
+USER steered directly to audibleprototype, notanother silentcheckpoint. NativePCM41536712878SUCCESS butNOTbooted/NOTdevicevalidated. New0127milestone14 usesDSPAFEfiniteDTMF10102 onRX1004 afterprovenAPR/AFE, bypassesunverifiedPCM/SMMUpath (not a protectionbypass). Fixedgain128,2x750ms1209+697Hz after20secwait(about30secfromboot), thenmute/powerdown/stopTX/RX+clockoff/pinrestore. No persistentflash/rootupdater.
+
+TFAnewwriteslimited00/01/keys+exactconfigregisters; noA3/A7/A8/F0/F5writes orOCPbypass/testbits orOPENMTP1. VerifiesbothID0c74/MTPEX+OTC/R25range first. OriginalNXP0c74optimalsettings + privatepinnedCNTspeaker-onlycommon/profilefields(nofactorycalprofile/noactualpatch), AUDFS48k,MANSCONF/PWDN/PLLclock, TX1005SD0/24bitstereo +TFADSPTXenablemodule1000b912/B920 +RXexistingR25command1000b911/B921, thenAMPEandMANOPERgate. Ifanyguard/commandfailsnoaudibleclaimandcleanup. ExistingMTP/R25verifiedunchangedatend. NoIOSHAL/systemmusicimplementation.
+
+Privateprofilegeneratedlocal940bytes SHA22ca7183eee18fe00ec26037569c55a5db8db0caf16b9b5f00caa28d820500dc fromCNTae54...; builderembedspropertytfa-speaker-ops ONLYat14. NativeCRC/address/count/maskswhitelistvalidatedagainstactualprofile+synthetictruncation/CRC/OTPdenyfixturesPASS. All7actualXNUheadercompilesPASS. 0127zerofuzz/sourceconsistencyPASS; fullnativeCI/hostsanitizersNEXT, thenactualnewkernelpackage14+directtemporarybootasUSERauthorized. PhonecurrentlyTWRP. Neednotaskapprovalagain.
+
 ## 2026-11-02 silent PCM full CI RUNNING; host checks PASS
 
 Source4111120cde717b7574aa56d1c1e7a8985792da9d pushed. Native41536712878 Intel fullbuildrunning, host/check41536713530SUCCESS with previousAFEkernel41496215362 forQEMU(consoleonly). AwaitnewnativeSHA/artifacts,package13onlyafterCIpasses,thenuniqueTWRP->FBKona temporaryboot,USERreturnforlogs. PhoneLEFTTWRP, no furtherhardwarewritesafterAFElogcapture. Relevantdetailsdirectlybelow.
