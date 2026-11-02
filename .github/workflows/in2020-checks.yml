@@ -28,6 +28,12 @@ jobs:
           python3 tools/check-in2020-audio.py
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/mdt_test.c -o mdt-test
           ./mdt-test
+      - name: Test fixed camera probe packet ABI
+        run: |
+          clang -DIN2020_PROBE_HOST_TEST -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o camera-packet-test
+          ./camera-packet-test
+          clang -DIN2020_PROBE_HOST_TEST -DIN2020_FRONT_PROBE -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera_probe.c -o front-packet-test
+          ./front-packet-test
       - name: Test SEC packet decoder with sanitizers
         run: |
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/sec_event.c in2020/sec_event_test.c -o sec-test

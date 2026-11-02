@@ -63,3 +63,53 @@ Private evidence: M:/ios-in2020/hardware/speaker-camera-20261102 and
 M:/ios-in2020/firmware/in2020-camera-stock-20261102. Vendor was mounted ext4
 ro,noload only while reading, then unmounted. Phone remains TWRP until a reviewed
 diagnostic boot is ready. Calibration files and original sensor blobs stay local.
+
+
+## Physical main/front identity and native ADSP preflight results
+
+The bounded V2 inspector decoded six candidate files' register-array shapes:
+IMX586/BG 19 tables each (2471 records), IMX689 standard 37/4721, IMX689 MP
+37/3751, S5K3M5 22/1172, IMX471 10/332. GC5035 has an unsupported width field
+and is rejected; its register tables were not executed. This is structural
+validation, not validation of every register's semantics.
+
+The fixed recovery camera-probe tool was then reviewed against the pinned
+OnePlus command handler and tested for ABI/packet bounds. It submits only
+sensor ID-probe packets plus the exact stock power-up/down sequence. The original
+kernel selects regulator defaults from this device tree, reads the identity and
+powers down. A standard main-module attempt matched the chip but failed the
+vendor check (actual vendor register 0x18 = 0x10). The correct MP variant then
+succeeded: slot 0, slave field 0x34, chip 0x0689. Main is therefore IMX689 MP.
+Front probe also succeeded: slot 2 / CSI3, slave field 0x20, chip 0x0471 (IMX471).
+Both runs logged dropping the regulator links after matching. No stream or
+calibration command was submitted. Closing the request-manager fd logs the
+stock driver's generic userspace-close warning and idle OIS callbacks; this was
+not a camera-process crash or a request to program OIS.
+
+Native ADSP kernel 41480178308, source
+0c8c4311f7351ee85aed46e369d14a14a0c9b652, built successfully; kernel SHA256
+4933ad0da15dce8a877a67edaf64a4c2a4f02216e49e8af09c614341ef31423e matched.
+Host/check workflow 41480180730 also passed. The temporary read-only preflight
+boot is 35655680 bytes, SHA256
+b85db966b862e6be20f81fad5447495ed78209900d6430e2bd3e80047d82c6ee,
+601 command bytes, ADT 17237148 bytes, no root updater. Fastboot accepted it in
+0.902s. User returned to Fastboot; verified temporary TWRP boot accepted in
+1.651s. Persistent log captured read-only: 396410 bytes / 16 flushes / no wrap,
+raw SHA256 7dee0168b4ba19d2f40726dfe749ecfe06c7595e5d028d7329a6325154aec30d.
+
+The phone ran steps 1 and 2 successfully. Apps/ADSP SMEM partition exists at
+0x80acf000, size 0x30000, initially empty; SMP2P and GLINK items were absent.
+IPCC received-ID read 0xffffffff (recorded, not treated as proof of a mapping
+fault). Firmware was whole: 8220-byte MDT including 7528 hash bytes, 18 loadable
+segments / 17125196 file bytes, span 0x02500000; relocation from 0x89500000 to
+0x8fe00000 passed. Driver ended with `nothing written`. Keys initialized and
+SEC touch became active. This validates preflight only, not DSP authentication,
+startup, APR/PCM, sound or camera frames.
+
+Further power review found that the generic reference hardcodes TCS0, while this
+phone's tested driver reserves TCS0 for firmware and uses only TCS1. No reference
+power writes have been enabled. Recovery has neither CONFIG_DEBUG_FS nor
+CONFIG_DEVMEM; attempts to read command-DB by those unavailable interfaces
+produced no data. Future ARC resource lookup must validate the live command DB
+inside XNU and share the existing TCS1 completion/quarantine policy. Phone left
+in TWRP while source work continues.
