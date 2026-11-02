@@ -1,6 +1,9 @@
 name: IN2020 iOS audio HAL
 on:
   workflow_dispatch:
+  push:
+    branches: [in2020-current]
+    paths: ["userland/audio/**", ".github/workflows/in2020-audio-userland.yml"]
 permissions:
   contents: read
 jobs:
