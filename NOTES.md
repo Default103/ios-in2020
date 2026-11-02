@@ -1,3 +1,11 @@
+## 2026-11-02 native APR AUDIO SERVICES PASS; silent AFE SOURCE PREPARED
+
+USER returnedFB. VerifiedTWRPtemporaryboot1.647s. Readonly logs/adsp-apr11-20261102:378200bytes12flushnowrap SHA9896b382ee7057686d7c845ce508f965bcd2675f162761ba989fd5fbb709eff2. GLINKfeatures1 agreed, IPCRTR/APRbothwaysOPEN, QRTRHELLOnode5/8services, step11APRcorestate1after2ms/onequestion. Servicesreply80bytes success:AFEversion260000,ASM70002,ADM70000. Steps1..11DONE, DSPstayson/linkthreadalive, noADSPfailed/panic/RPMHtimeout found. Review.jsonprivate. PhoneLEFTTWRP, noAFE/PCM/AMPenable yet.
+
+0125sourceprepared: milestone12executesADSP1..11then gatedsilentAFEportprobe. Fixedport1004/SD1/24bit/stereo/48k/CPUmaster(FDTmasterall1), clock104/3072000/attr1. NativeTFAread00gateBOTHID0c74/PWDN1/AMPE0 first+after; noampdatawrites. WESTGPIO133/134/135func1,137func3/no-pull8mA snapshots, allowedinitialmuxonly0/target; allsnapshotsbeforewrite, readback, restoreafterackSTOP+clockOFF; uncertaincleanupkeepperipheralmux/no retry. APRreplystrictopcode/length/echo/status; starttimeoutstillSTOP; onlypinsampledactivity/notfrequencymeasure. NOASM/ADM/PCM/HAL.
+
+ActualXNUheadercrosscompileadsp/glue/rpmh/tfa/afeALLPASS; 0125zero-fuzz oldside/cumulativeconsistencyPASS. FixedAFEwirefixturesalreadyhostsanitizer41492629387PASS. NeedfullnewnativeCI andhostchecks thenpackage12withpinnedfirmware; do notbootoldkernelstep12 asitdoesnotcontainAFE. Prior kernel41490492816 supports7/11only. Speakeroutput/cameraframesstillNOTimplemented. Camera nativepower/ISPbridge remainsfuturework.
+
 ## 2026-11-02 native DSP START/STOP PASS; STEP11 boot ACCEPTED, USER RETURN PENDING
 
 USER returnedFB; uniqueKona/verifiedTWRP temporarybootaccepted1.646s. Readonly log logs/adsp-start7-20261102:377045bytes15flush nowrap SHA15bfc589f31d93fb508bfad0975e7171746fdeabfe4a805a6f482e6e2616e66c; review.jsonassertsallrequiredmarkers andnoADSPfailed/panic/RPMHtimeout. NativeTFAIDs0c74both+MTP3+rawR25 matchrecovery. Steps1..7allDONE; AOPmailboxOPEN; signature/memsetupaccepted,18segmentscopy/clear0readbackdiff. LCX30030index6/LMX30040index4 level384 TCS1complete; DSPauthsuccess/READY slave-kernel6 after29.003ms, handoverthenlevel0indices0complete. DSPstopACK55.691ms, TrustZoneshutdownsuccess/AOPoffaccepted. SharedtouchVRMtransactions subsequentlycomplete. DSP start/cleanup+ampreadtransport VERIFIED, SOUNDNOTimplemented.

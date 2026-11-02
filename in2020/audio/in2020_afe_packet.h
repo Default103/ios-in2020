@@ -1,5 +1,6 @@
 /* Fixed IN2020 tertiary MI2S diagnostic packets, excluding the 20-byte APR
- * header. No transport or hardware access. Not installed in the kernel yet.
+ * header. Serialization has no transport or hardware access. Used by the
+ * gated in2020adsp=12 silent-port diagnostic after APR readiness.
  * Layout: pinned OnePlus audio kernel 0ac91e8996028893ddca8295e59d187c1cc8a281
  * include/dsp/apr_audio-v2.h, asoc/kona.c and asoc/msm-dai-q6-v2.c.
  * Stock mixer_paths.xml: RX two channels S24_LE. 32-bit slots, 48 kHz.

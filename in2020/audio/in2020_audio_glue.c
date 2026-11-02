@@ -68,7 +68,9 @@ hakios_battery_report(const struct hakios_battery_state *state)
 void
 hakios_sound_dsp_up(void)
 {
+    extern void in2020_afe_probe(void);
 	printf("adsp: the audio services are up; the speakers' path is not here yet\n");
+    in2020_afe_probe();
 }
 
 void

@@ -3,7 +3,8 @@ from pathlib import Path
 import re
 root = Path(__file__).resolve().parents[1]
 names = ('in2020_adsp.c', 'in2020_audio_glue.c', 'hakios.audio.h',
-         'hakios.input.h', 'in2020_mdt.h', 'in2020_rpmh.c', 'in2020_arc.h', 'in2020_tfa.c')
+         'hakios.input.h', 'in2020_mdt.h', 'in2020_rpmh.c', 'in2020_arc.h', 'in2020_tfa.c',
+         'in2020_afe.c', 'in2020_afe_packet.h')
 state = {}
 for patch in sorted((root / 'xnu/patches').glob('*.patch')):
     if int(patch.name[:4]) < 123:

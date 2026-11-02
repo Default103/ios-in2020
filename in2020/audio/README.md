@@ -13,9 +13,10 @@ Original attribution is retained; the accompanying license is LICENSE.APSL.
 The IN2020 carveout is 0x8fe00000 + 0x02500000, not the Mi 10's address.
 The native kernel port exposes `in2020adsp=1` (SMEM/IPCC survey), `=2` (survey
 plus embedded firmware validation), `=7` (start then stop the DSP), and `=11`
-(keep the DSP/APR link up). Other values are rejected. The generic `adsp=1` /
+(keep the DSP/APR link up), and `=12` (APR then a silent AFE port test).
+Other values are rejected. The generic `adsp=1` /
 `adsp_step` entry point is not installed. Steps 1/2 passed on the phone; the
-write stages require their own device validation. No amplifier enable or PCM
+Milestones 7 and 11 now passed on device; 12 requires its own validation. No amplifier enable or PCM
 sink is installed. These milestones do not imply working speaker output.
 
 The inherited standalone TCS0 writer has been removed. The IN2020 RPMh module
@@ -30,7 +31,8 @@ validation. An absent or malformed resource table prevents the power request.
 
 Milestones 7/11 also perform bounded native TFA identity and OTP-status reads
 through GPIO44/45. Only addresses 0x34/0x35 and registers 0x03/0xf0/0xf5 are
-accessible; health fields are read only after identity 0x0c74 matches. The bus
+accessible during the initial probe; the AFE gate can additionally read register
+0x00 to require PWDN=1 and AMPE=0 on both chips. The bus
 must initially be idle with an expected pin function. Open-drain transactions
 never drive high, have a 100ms deadline, and restore both pin configurations and
 output latches. No reset GPIO, amplifier data register, OTP programming or
@@ -51,8 +53,17 @@ Apollo's CS35L41 amplifier tables. No claim of working audio is made.
 `in2020_afe_packet.h` prepares only fixed tertiary MI2S packets (port 0x1004,
 48 kHz, stereo, 24-bit samples, SD1, CPU master; clock 0x104 at 3.072 MHz,
 COUPLE_NO). It has no transport or hardware access and is not installed in
-the current kernel. `afe_packet_test.c` checks independent wire fixtures and
+the earlier step-7/11 kernel. New overlay 0125 installs `in2020_afe.c`, called
+only after APR readiness with milestone 12. `afe_packet_test.c` checks independent wire fixtures and
 invalid actions. DSP acceptance, pin mux, AFE start/stop and PCM remain untested.
 The measured GPIO137 data1 mux is function 3; GPIO133/134/135 use function 1.
 Do not copy the reference phone's primary TDM configuration or amplifier driver.
+
+The port diagnostic snapshots all four pin configurations/latches before any
+write, accepts only GPIO or the intended MI2S mux, and restores pins after
+acknowledged port/clock shutdown. Every APR command checks opcode, payload
+length, echoed command and zero status. A start timeout still triggers STOP;
+uncertain shutdown preserves the peripheral mux and starts no further stream.
+GPIO sampling reports activity only, not measured clock frequency. Amplifier
+power-down is read again afterward. No amplifier register data is written.
 

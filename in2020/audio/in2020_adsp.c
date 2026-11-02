@@ -3226,19 +3226,19 @@ in2020_adsp_init(void)
     thread_t thread;
     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
     if (!requested) return;
-    if (requested != 1 && requested != 2 && requested != 7 && requested != 11) {
-        printf("IN2020 ADSP: supported milestones are 1,2,7,11; rejected %u\n", requested);
+    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12) {
+        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12; rejected %u\n", requested);
         return;
     }
     adsp_memory = UMI_ADSP_MEMORY;
     adsp_memory_size = UMI_ADSP_SIZE;
-    last_step = requested;
-    keep = (requested == 11);
+    last_step = requested == 12 ? 11 : requested;
+    keep = (requested >= 11);
     new_from = STEPS + 1;
     pause_ms = 0;
     printf("IN2020 ADSP: staged steps=%u memory=%#x size=%#x\n",
         last_step, adsp_memory, adsp_memory_size);
-    if (kernel_thread_start(requested == 11 ? whole_thread : steps_thread, NULL, &thread) != KERN_SUCCESS) {
+    if (kernel_thread_start(requested >= 11 ? whole_thread : steps_thread, NULL, &thread) != KERN_SUCCESS) {
         printf("IN2020 ADSP: thread unavailable\n");
         return;
     }
