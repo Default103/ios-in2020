@@ -294,3 +294,29 @@ checks passed locally. Host/check run 41536713530 passed (its QEMU part uses
 the earlier AFE kernel for console reachability only). Full kernel run
 41536712878 is building. No PCM hardware result is available yet, and no
 amplifier enable or audible output is added.
+
+## Requested audible prototype temporarily booted on November 3
+
+The user requested a directly booted audible prototype. Source
+02b199167c29ce1ad78fec8a7ea536a7b20488b8 adds milestone 14: fixed low-gain,
+finite DSP DTMF tones through the verified MI2S port, with the phone's pinned
+speaker settings and existing calibration, followed by amplifier shutdown.
+It does not run the still-unverified PCM/SMMU diagnostic or implement continuous
+iOS audio. Factory calibration/OTP-copy commands and OCP bypass are excluded.
+
+Native run 41540681132 and host/check run 41540683538 succeeded. The actual
+build log contains 0127 and speaker-driver compilation with zero failed patch
+hunks. Kernel SHA256
+23069c3b9cae70da2ead49bcf1f2066d24f669521541f50db5aca23d4f8a5591
+matches its download manifest. The local 35692544-byte boot image is SHA256
+f87f78152523461fb0e4a2af954d4a8884aca76a55da4a0931c622597554d8be,
+with a 17238124-byte ADT and 602-byte command. The derived speaker profile stays
+local; its CRC/register bounds and OTP exclusions passed host fixtures and
+validation against the actual profile. No root updater is present.
+
+Unique root TWRP, unmounted vendor/data, unique Kona bootloader, download limit
+and boot hash were checked. Temporary boot returned Sending/Booting OKAY in
+0.908s. User was asked to listen around 30–60 seconds after startup for two
+short tones and report upper/lower speaker output, then return to Fastboot
+when convenient. Actual amplifier startup, DSP tone acceptance, audibility,
+shutdown and calibration preservation remain unverified pending feedback/logs.

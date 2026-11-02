@@ -1,3 +1,11 @@
+## 2026-11-03 AUDIBLE milestone14 BOOT ACCEPTED; USER sound feedback pending
+
+USER saysbuildcomplete; native41540681132SUCCESS/source02b199167c29ce1ad78fec8a7ea536a7b20488b8, host41540683538SUCCESS. ActualCI0127+speaker.ccompileverified,zeroFAILEDhunks. KernelSHA23069c3b9cae70da2ead49bcf1f2066d24f669521541f50db5aca23d4f8a5591 verifiedmanifest. Newactualimage builds/xnu-41540681132/in2020-audible-step14/in2020-ios16-adsp-step14-boot.img: SHA f87f78152523461fb0e4a2af954d4a8884aca76a55da4a0931c622597554d8be,35692544bytes,ADT17238124,602cmd,privateprofile940hash22ca7183eee18fe00ec26037569c55a5db8db0caf16b9b5f00caa28d820500dc,no libraryupdater. Thiskernel14containsTFAwrite/gates/finiteDTMF; PCM13notrun.
+
+Unique rootTWRP/no vendor/data mount ->adbrebootbootloader->uniqueKona/product/downloadlimit805306368/hashverified->fastbootboot14Sending/BootingOKAY0.908s. Logs/in2020-audible-step14-boot-20261103.txt andimageboot-result.json statusFASTBOOT_ACCEPTED_AUDIBILITY_UNVERIFIED. No laterphonecommands. USERasyncaskedlisten30-60secfortwo750mslowgainbeeps/top-bottom,andifconvenientreturnFBreplyresult. PENDING. DO NOTclaimactualsoundorAMPsuccessuntilUSERandlogs. NextwhenuserreturnsFB verifyTWRPtempboot+readonlycaptureNEW logs/audible14-20261103; inspectSPEAKERprofile/setup/PLL/TXTFADSPcalib/AMPEMANOPER/DTMF10102reply/toneaccepted/off/calibrationunchanged,AFEcleanup. Guardfailurecanpreventtone; diagnoseexactfirstfailure,neverassumeaudibilityfrombootOKAY.
+
+Originalgoalcontinuousspeakers+iOScamera remainsunfinished: thisisonlydirectaudibleprototypeasUSERrequested. NoAudioServerPlugIn/continuousPCMdriver,cameranativeISP/framesmissing. All5cameraIDsproven. UserauthorizationpersistspushDefault103/builds/tempboots/noextraapproval.
+
 ## 2026-11-02 USER requests direct AUDIBLE image+boot; source READY
 
 USER steered directly to audibleprototype, notanother silentcheckpoint. NativePCM41536712878SUCCESS butNOTbooted/NOTdevicevalidated. New0127milestone14 usesDSPAFEfiniteDTMF10102 onRX1004 afterprovenAPR/AFE, bypassesunverifiedPCM/SMMUpath (not a protectionbypass). Fixedgain128,2x750ms1209+697Hz after20secwait(about30secfromboot), thenmute/powerdown/stopTX/RX+clockoff/pinrestore. No persistentflash/rootupdater.
