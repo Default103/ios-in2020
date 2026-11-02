@@ -1,3 +1,9 @@
+## 2026-11-02 silent AFE PASS; PCM SOURCE PREPARED
+
+USERreturnedFB;verifiedTWRPtempboot1.647s. Readonly logs/afe-port12-20261102:454507bytes17flushnowrap rawSHA13b10e3c56375ce8089e79a509f8f7812742c7aa3d0f2a379b364f9149cfdc87. ALL5AFEactions(clockon/config/start/stop/off)BASICreplyecho/status0. GPIO133/134/135/137initialcfg1, BCLK4821changes/WS1951in20ksamples(ACTIVITYONLY/notfrequency),all4restore1. BothampsID+PWDN1AMPE0 verifiedbeforeandafter. Finalstart1stop1clock-off1amps-off1. DSP/APRstillpassed. NoPCM/AMPoutputthisboot. PhoneLEFTTWRP.
+
+New0126sourcepreparesmilestone13 silent64periodPCM: onlynewunusedSMR+disabledemptyCB(skipnumS2CB) appsSMMU15000000, rejectexistingSID1801mapping,32KBzeroedwiredbuf+16KB4Ktables,IOVA10000000/SIDhigh1,ASIDcb+1,36bitPAguards,strictreadbacks/TLBsync/controlrestore. Buffersstaywired; uncertainDSPclose/unmaporHWreadbackkeepsmapping/memoryquarantineduntilreset. ASMmap/ADMno-procCOPP/ASM16bitstereo48k/routing/run;8slotring64*960framesallSILENCE. Uniquegenerationtokens,completionservice/port/address/handle/lenchecks;commandACKnotDMAcompletion. EventboundaryfixturesPASS (includingstalegeneration/malformed/ACK);all6actualXNUheadercompilesPASS,0126zerofuzz/sourceconsistencyPASS. APRpacketundersize/truncatedheaderguardadded. NeedfullCI/hostsanitizersbeforepackage13; cannotusepreviouskernel13. NoSMMU/PCMhardwarewritesyet, noampenable/HAL/cameraframes.
+
 ## 2026-11-02 silent AFE STEP12 temporary boot ACCEPTED; USER RETURN PENDING
 
 Native41496215362 SUCCESS14m48s/source860e9940c13e567b8a8cdf2db09c345f9ede7865. ActualCI0125+in2020_afe.ccompileverified,zeroFAILEDhunks. KernelSHAe50a988564c5154569d9210395eff14f71ce5879acf9e4a8043de8ff1cc781cf matchesdownloadmanifest. Step12bootSHA601325b2e956ce8b4ac01442cc2fe5c22f26b3f622545a5c8b8ef4e5ff73b244,bytes35672064,ADT17237148,602cmd,no libraryupdater,AFEtestenabled/AMPenablePCMfalse. Path builds/xnu-41496215362/in2020-afe-step12.

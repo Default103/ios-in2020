@@ -12,7 +12,7 @@ for name in ('workspace', 'kernel', 'out'):
     p.add_argument('--' + name, type=Path, required=True)
 for name in ('kernel-sha256', 'kernel-run', 'kernel-commit'):
     p.add_argument('--' + name, required=True)
-p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12), default=2)
+p.add_argument('--adsp-step', type=int, choices=(2, 7, 11, 12, 13), default=2)
 a = p.parse_args()
 r = a.workspace.resolve()
 digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -73,7 +73,8 @@ record = dict(status='BUILT_NOT_PHONE_TESTED', kernel_run=a.kernel_run,
               boot_sha256=digest(boot.read_bytes()), boot_size=boot.stat().st_size,
               adt_size=len(encoded), cmdline=command, cmdline_bytes=len(command.encode()),
               firmware=files, adsp_steps=min(a.adsp_step, 11), adsp_milestone=a.adsp_step,
-              afe_port_test_enabled=a.adsp_step == 12, dsp_start_enabled=a.adsp_step >= 7,
+              afe_port_test_enabled=a.adsp_step >= 12, pcm_transport_test_enabled=a.adsp_step == 13,
+              dsp_start_enabled=a.adsp_step >= 7,
               amplifier_identity_probe_enabled=a.adsp_step >= 7,
               speaker_output_implemented=False, camera_capture_implemented=False,
               library_updater_present=False, temporary_boot_only=True)

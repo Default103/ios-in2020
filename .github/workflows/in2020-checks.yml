@@ -32,6 +32,8 @@ jobs:
           ./arc-test
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/afe_packet_test.c -o afe-packet-test
           ./afe-packet-test
+          clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/pcm_event_test.c -o pcm-event-test
+          ./pcm-event-test
       - name: Test fixed camera probe packet ABI
         run: |
           python3 in2020/sensor_v2_test.py

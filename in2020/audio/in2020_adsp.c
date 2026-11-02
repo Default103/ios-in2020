@@ -2494,7 +2494,12 @@ apr_input(const uint8_t *data, uint32_t length)
 		printf("adsp: apr: a header of %u bytes in a packet of %u: dropped\n", header_length, length);
 		return;
 	}
-	payload = (header.size < length ? header.size : length) - header_length;
+	if (header.size < header_length || header.size > length) {
+		printf("adsp: apr: invalid/truncated packet size %u (header %u, received %u): dropped\n",
+		    header.size, header_length, length);
+		return;
+	}
+	payload = header.size - header_length;
 	apr_in++;
 	if (header.token != apr_waited_for || apr_waited_for == 0) {
 		hakios_apr_events_t events = apr_events;
@@ -3226,13 +3231,13 @@ in2020_adsp_init(void)
     thread_t thread;
     (void)PE_parse_boot_argn("in2020adsp", &requested, sizeof(requested));
     if (!requested) return;
-    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12) {
-        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12; rejected %u\n", requested);
+    if (requested != 1 && requested != 2 && requested != 7 && requested != 11 && requested != 12 && requested != 13) {
+        printf("IN2020 ADSP: supported milestones are 1,2,7,11,12,13; rejected %u\n", requested);
         return;
     }
     adsp_memory = UMI_ADSP_MEMORY;
     adsp_memory_size = UMI_ADSP_SIZE;
-    last_step = requested == 12 ? 11 : requested;
+    last_step = requested >= 12 ? 11 : requested;
     keep = (requested >= 11);
     new_from = STEPS + 1;
     pause_ms = 0;

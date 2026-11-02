@@ -45,8 +45,9 @@ The ELF32/Hexagon header gate checks size, endianness, machine, program-header
 layout and count before walking any segments. Firmware segment fit and sizes
 are then checked by the inherited walker. Map failures stop read-only inspection.
 
-Remaining audio work: validate staged DSP authentication/start and APR on device, TFA9874 control and
-protection, AFE/PCM playback, then the iOS AudioServerPlugIn bridge. Do not use
+DSP start/stop, APR readiness and silent AFE start/stop now passed on device.
+Remaining audio work: validate PCM transport, TFA9874 control and
+protection, then the iOS AudioServerPlugIn bridge. Do not use
 Apollo's CS35L41 amplifier tables. No claim of working audio is made.
 # IN2020 AFE packet preparation
 
@@ -55,7 +56,8 @@ Apollo's CS35L41 amplifier tables. No claim of working audio is made.
 COUPLE_NO). It has no transport or hardware access and is not installed in
 the earlier step-7/11 kernel. New overlay 0125 installs `in2020_afe.c`, called
 only after APR readiness with milestone 12. `afe_packet_test.c` checks independent wire fixtures and
-invalid actions. DSP acceptance, pin mux, AFE start/stop and PCM remain untested.
+invalid actions. DSP acceptance, pin mux and AFE start/stop passed in milestone 12;
+PCM requires milestone 13's separate device validation.
 The measured GPIO137 data1 mux is function 3; GPIO133/134/135 use function 1.
 Do not copy the reference phone's primary TDM configuration or amplifier driver.
 
@@ -66,4 +68,20 @@ length, echoed command and zero status. A start timeout still triggers STOP;
 uncertain shutdown preserves the peripheral mux and starts no further stream.
 GPIO sampling reports activity only, not measured clock frequency. Amplifier
 power-down is read again afterward. No amplifier register data is written.
+
+Milestone 13 adds a silent 64-period ASM/ADM transport test. It refuses any
+existing SMR that covers SID 0x1801, reserves only an unused match and a disabled
+empty stage-1 context beyond the stage-2-only banks, snapshots controls, and
+maps 32KB of zeroed wired memory at IOVA 0x10000000 using 4KB translation tables.
+GPU SMMU 0x03da0000 is untouched; this uses apps SMMU 0x15000000. A failed
+readback or uncertain DSP close/unmap retains the mapping and buffers until
+reset. Mapping restoration follows confirmed DSP unmap, context disable and
+bounded TLB sync. Allocations stay wired for this one-shot diagnostic even on
+successful cleanup. No arbitrary SID, physical address, stream or session is
+accepted from user input.
+
+DMA completion handling checks service, port, unique generation token, address,
+map handle and payload length. An ordinary command ACK cannot recycle a buffer.
+Unit fixtures cover stale generations and malformed responses. No amplifier
+enable, tone, protection bypass, iOS device node or audio plug-in is added.
 
