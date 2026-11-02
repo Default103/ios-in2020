@@ -1,3 +1,9 @@
+## 2026-11-02 buttons implementation / audio audit IN PROGRESS
+
+User requests standard power lock/wake and volume keys plus speakers; phone TWRP. New0122 replaces Redmi wiring with PM8150 SID0 GPIO6/7 and PONbit0. core+4 is INT_EN not APIDcount; bounded512-entry table, exactv5version, observer reads only, input checks, debounce/failure-release. Sources in2020/pm8150_keys*. Patch exact old-side and source-consistency PASS. Host compile/fullkernel pending; existing sweetkeys=0 must change1 in test image. No runtime success yet.
+
+Readonly capture hardware/input-audio-20261102: recovery no soundcard and no boundTFA driver. vendor_a mounted ext4ro,noload then unmounted. Private firmware/in2020-audio-stock-20261102 contains tfa98xx.cnt,audio_tfa9894.ko,3audioXMLs +SHAmanifest. FDT right34/reset91,left35/reset99 onI2C884000. IntendedTFA9894driver !=measuredchipID. ApolloCS35L41cannotreuse. IN2020DSP/PCM/HALmissing; SPEAKERS INCOMPLETE. See docs/IN2020-buttons-audio-20261102.md. No reboot/flash/moduleloading/PMICwrites; phoneTWRP. Preserve8CPU/graphics/v4/userdata.
+
 ## 2026-11-02 v4 validation LOG CAPTURED; wallpaper still visually absent; software cadence faster
 
 USERfinishedtest/phoneFastbootrequestedcollectanalysis. InitialUSBabsent; userreconnected. Restrictedinterfacebootunknowncommand, rebootbootloaderOKthenverifiedTWRPtemporarybootSending/BootingOKAY1.645sec. RootTWRPADB readonlyuserdata-tailcapture M:/ios-in2020/logs/perf-phone-graphics-v4-fb120-20261102;744769validbytes,82flushes,nowrap,rawSHA210e196cda2433c19e9a0befe54a451e9bda14a354ffc1c9e85c391f424f2908. IndependenttextreconstructionPASS;raw+textfrozen. recoverylog/mountssaved;userdataunmounted. Noflash/format/fsck/iOSrebootaftercapture. PhoneLEFTTWRP.
