@@ -1,3 +1,9 @@
+## 2026-11-02 keys full kernel BUILDING on Intel; ADSP inputs captured
+
+836f5f6 pushed, Intelkernel41443746692 acquiredrunner andBuildinprogress. Superseded41443275083 auto-cancelled. Host/QEMU41443511757SUCCESS; QEMUoldkernelonly. New keysbootbuilder localpackagingregressionPASS with OLDf185kernel,588bytecmd; those fixtures explicitlyDO-NOT-BOOT in projects/ios-in2020/input-audio-build/packaging-host-only. FinalnewkernelpackagingNOTdone; nextwaitCI/downloadSHA,run tools/build-in2020-keys-boot.py withcorrecthash/run/commit. This emitskeys1/0 variants,8CPU/120softwareHz/currentv4graphics preserved,noADTlibraryupdater. PhoneTWRP, no reboot/flash.
+
+USBbrieflydisconnected; USERreconnected. Captured20ADSPfiles17141636bytes readonly from /firmware/image into firmware/in2020-audio-stock-20261102/adsp.18PT_LOAD sizesPASS,link89500000..8ba00000 span02500000matchesFDTreserved8fe00000+02500000; allrelocatableflag,candidatedelta06900000. OFFLINElayoutonly, noauth/load/execute. MixerXMLspeaker TfaEnable1; deepbuffertert_i2s TERT_MI2S_RXMultiMedia1. DSP/PCM/HALremainunimplemented and SPEAKERSNOTWORKING. DoNOTclaim audioadapted or hardwarekeysverified untildeviceevent/visualtest.
+
 ## 2026-11-02 keys host tests PASS / full kernel queued
 
 9dd1439 committed. Initialpush auto-reviewrejected unverifieddestination; USER explicitly authorized push to Default103/ios-in2020 and macOSbuild, then pushSUCCESS. Kernel41443275083 macos15 stillqueued. Host41443511757 hostjobSUCCESS (ASAN/UBSANkeys +patchconsistency); QEMUusesprior41360566477kernel and doesNOTtestnewkeys. LocalZigoptimizedfixturesPASS (normalcacheaccessrequired). Addedmacos15intelrunneroption for alternatebuild; nextdispatch onnewcommit. PhoneunchangedTWRP; no newkernelboot.

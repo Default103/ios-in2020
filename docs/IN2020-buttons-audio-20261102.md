@@ -89,3 +89,21 @@ device Q is 0x35 with speaker/speaker/calibrate.cal profiles. Both declared
 hardware IDs are zero, so the container cannot establish measured chip identity.
 Truncation, CRC corruption and a CRC-correct out-of-bounds device pointer were
 rejected by the inspector. This validates metadata only, not all tuning payloads.
+
+
+After USB reconnection, the mounted read-only modem firmware supplied adsp.mdt
+and adsp.b00 through adsp.b18: 20 files, 17141636 bytes total. All 18 PT_LOAD
+segments have file sizes within memory sizes; nonempty segment files match the
+ELF sizes. Their link span 0x89500000..0x8ba00000 is exactly 0x02500000, matching
+the live FDT ADSP reservation size at 0x8fe00000. All load segments carry the
+relocatable flag. The candidate relocation delta is 0x06900000; this is an
+offline layout check only. Secure authentication, memory assignment and execution
+have not been attempted. Private hashes/segment/layout records are beside the
+firmware under adsp/. No firmware has been published.
+
+The keys boot builder verifies the frozen eight-core baseline loader, v4 boot
+hash and new kernel hash; retains the v4 graphics injection and 120Hz software
+cadence; uses the original GPU ADT without the library update node; emits keys-on
+and keys-off variants. A host packaging regression using the old kernel passed
+with 588-byte command lines and all memory/ABI bounds checks. These old-kernel
+host fixtures are explicitly marked DO-NOT-BOOT and are not adapted images.
