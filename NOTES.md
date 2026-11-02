@@ -1,3 +1,9 @@
+## 2026-11-02 recovery amp status READ; stock TFADSP strings found
+
+Unique rootTWRP verified. Static media_inventory --tfa-status built SHAfd420901c9acb3d60f4829ba7f0220cf49924b26622edfbc817ed064ab93368d, pushed/tmp only. Skipscameraopens, bounddrivercheck, gateID0c74thenreadregs00/f0/f5 only; allI2Creturn2. Bothamps power00=0001(PWDN1,AMPE0),MTPf0=0003(OTC1,EX1),R25nonzero; per-devicecalibrationraw keptprivate hardware/speaker-camera-20261102/tfa-status-recovery.json. Noreset/enable/OTPdatawrites.
+
+Vendor tempmountedro,noload andunmounted; inventoryprivate dsp-dynamic-inventory.txt no separatelynamedTFAso observed. Localstockadsp.b11 contains tfadsp_bgth and capi_v2_tfadsp_rx/tx.c strings; private hash+offsetrecord tfadsp-firmware-strings.json. Not runtimeDSPmoduleproof. AFEhost/QEMU41492629387SUCCESS on da931fe; QEMUoldkernelonly. Native655a2b9 build41490492816stillcompiling; STEP7FIRST,7/11notdevicevalidatedyet. PhoneleftTWRP.
+
 ## 2026-11-02 DSP-start kernel COMPILING; AFE wire preparation isolated
 
 Native run41490492816 acquired Intel runner17:32:15UTC after queue; Build in progress. Source remains655a2b9 (later host-only prep commits are not this kernel). Host/QEMU41490491676 and newer camera-parser41491602269 SUCCESS. No phone commands; phone remains TWRP.

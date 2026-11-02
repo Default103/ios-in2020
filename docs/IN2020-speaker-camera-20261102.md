@@ -146,3 +146,19 @@ For the future speaker stream, measured FDT names tertiary MI2S pins 133
 no pull. Mixer paths select two channels S24_LE; original machine driver
 defaults to 48 kHz, and audio ION stream is 0x1801 with SID mask 0xf.
 These are configuration inputs, not evidence that the clocks or PCM run.
+
+The follow-up recovery `media_inventory --tfa-status` mode skips all camera
+opens, checks that neither amplifier has a bound driver, confirms revision
+0x0c74, then reads only registers 0x00, 0xf0 and 0xf5. Both devices returned
+power control 0x0001 (PWDN set, AMPE clear) and MTP 0x0003 (OTC and EX set).
+Both R25 raw values were nonzero; the per-device values remain in private
+hardware evidence. No resistance conversion or acoustic/health claim is made.
+No amplifier register data, reset or OTP command was written.
+
+Vendor was briefly mounted ro,noload to list DSP dynamic libraries and then
+unmounted. No separately named TFA library appeared in that inventory; this is
+not proof none is needed. Captured stock adsp.b11 does contain `tfadsp_bgth`,
+`capi_v2_tfadsp_rx.c` and `capi_v2_tfadsp_tx.c` strings. This supports examining
+the built-in TFADSP path, but only live AFE responses can establish availability.
+AFE packet source da931fe passed sanitizer host/QEMU workflow 41492629387;
+its QEMU portion uses the previous kernel and does not test physical MI2S.

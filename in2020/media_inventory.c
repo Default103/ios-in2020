@@ -19,9 +19,23 @@ _Static_assert(sizeof(struct cam_control) == 24, "camera control ABI");
 _Static_assert(sizeof(struct sensor_cap) == 40, "sensor query ABI");
 _Static_assert(sizeof(struct i2c_msg) == 16, "64-bit I2C ABI");
 
-int main(void)
+static int tfa_read(int fd, unsigned addr, unsigned reg, uint16_t *out)
 {
-    for (unsigned n = 0; n < 64; ++n) {
+    if ((addr != 0x34 && addr != 0x35) ||
+        (reg != 3 && reg != 0 && reg != 0xf0 && reg != 0xf5)) return -1;
+    uint8_t index = (uint8_t)reg, value[2] = {0};
+    struct i2c_msg msgs[2] = {{addr, 0, 1, &index}, {addr, 1, 2, value}};
+    struct i2c_rdwr request = {msgs, 2};
+    int rc = ioctl(fd, 0x0707, &request);
+    if (rc == 2) *out = (uint16_t)(((unsigned)value[0] << 8) | value[1]);
+    return rc;
+}
+
+int main(int argc, char **argv)
+{
+    int status = argc == 2 && !strcmp(argv[1], "--tfa-status");
+    if (argc != 1 && !status) return 2;
+    for (unsigned n = 0; !status && n < 64; ++n) {
         char path[128], name[80] = {0};
         snprintf(path, sizeof(path), "/sys/class/video4linux/v4l-subdev%u/name", n);
         FILE *f = fopen(path, "r");
@@ -50,12 +64,19 @@ int main(void)
         }
         int fd = open("/dev/i2c-0", O_RDWR | O_CLOEXEC);
         if (fd < 0) { printf("TFA addr=%#x open_errno=%d\n", addr, errno); continue; }
-        uint8_t reg = 3, value[2] = {0};
-        struct i2c_msg msgs[2] = {{addr, 0, 1, &reg}, {addr, 1, 2, value}};
-        struct i2c_rdwr request = {msgs, 2};
-        int rc = ioctl(fd, 0x0707, &request);
+        uint16_t revision = 0;
+        int rc = tfa_read(fd, addr, 3, &revision);
         if (rc != 2) printf("TFA addr=%#x read_rc=%d errno=%d\n", addr, rc, errno);
-        else printf("TFA addr=%#x revision=%#06x\n", addr, ((unsigned)value[0] << 8) | value[1]);
+        else printf("TFA addr=%#x revision=%#06x\n", addr, revision);
+        if (status && rc == 2 && revision == 0x0c74) {
+            const uint8_t registers[] = {0, 0xf0, 0xf5};
+            for (unsigned i = 0; i < sizeof(registers); ++i) {
+                uint16_t value = 0;
+                rc = tfa_read(fd, addr, registers[i], &value);
+                printf("TFA addr=%#x reg=%#x value=%#06x read_rc=%d errno=%d\n",
+                       addr, registers[i], value, rc, rc == 2 ? 0 : errno);
+            }
+        }
         close(fd);
     }
     return 0;
