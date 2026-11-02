@@ -24,6 +24,7 @@ def fixture():
         ('slaveAddr', b''), ('registerData', struct.pack('<Q', 0)),
         ('delayUs', b''), ('resolutionData', bytes(mode)),
         ('streamConfiguration', struct.pack('<8Q', 0, 0x2b, 0, 0, 640, 480, 10, 1)),
+        ('moduleConfiguration', struct.pack('<40Q', 3, *([0] * 39))),
     ]
     symbols, pool, offsets = bytearray(), bytearray(), {}
     for ident, (name, value) in enumerate(items, 1):
@@ -54,6 +55,7 @@ def reject(data):
 data, pool, offsets = fixture()
 result = inspect(data)
 assert result['sensor_name'] == 'synthetic'
+assert result['module_configuration_camera_id'] == 3
 assert result['resolution_candidates'][0]['inferred_fps'] == 30
 assert result['resolution_candidates'][0]['streams'][0]['raw_fields'][4:6] == [640, 480]
 assert not result['register_tables_executed']
@@ -76,6 +78,7 @@ for at, fmt, value in [
     (pool + offsets['resolutionData'] + 88, '<d', 0.0),
     (pool + offsets['resolutionData'] + 152, '<Q', 2),
     (pool + offsets['resolutionData'] + 160, '<Q', 999),
+    (pool + offsets['moduleConfiguration'], '<Q', 32),
 ]:
     corrupt = bytearray(data)
     struct.pack_into(fmt, corrupt, at, value)
