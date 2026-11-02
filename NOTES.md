@@ -1,3 +1,9 @@
+## 2026-11-02 DSP-start kernel QUEUED; host checks PASS
+
+655a2b9d43adf13b3a05ca8cbe63b1b220e7a235 pushed; native Intel CI41490492816 queued, host/QEMU41490491676 SUCCESS. Current ADB inventory is recovery (TWRP), not Fastboot; no new reboot/boot since prior preflight log capture. After native CI success package7 and11 with pinned firmware, STEP7 FIRST and inspect DSP-ready/shutdown/ARC/TFA logs before11. Sound output remains unimplemented.
+
+Camera parser/source prep commit3c64545: V2 parser bounds counted mode references (408/64/80-byte records) and finite candidate FPS; main MP9/front3 candidates. Synthetic valid fixture/alltruncations/badrefs/counts/NaN/Inf tests PASS, six stock modules PASS, GC5035 still failclosed. No executable capture table or frame claim. Native supplies resolved from live FDT (PM8009 L1/L3/L7, PM8150A BOB plus GPIO), original CAMCC mapping verified pinned source; no native camera hardware writes. Additional source reference manifests private projects/ios-in2020/camera-reference/kona and audio-path-reference. Speaker TERT_MI2S/S24_LE pins133/135/134/137 and SMMU1801 documented as future inputs, not working PCM.
+
 ## 2026-11-02 DSP-start stage SOURCE PREPARED; not device validated yet
 
 0124 replaces compiledsweet_rpmh.c with in2020_rpmh.c: same touchVRM whitelist and original3commandvalues, sharedtransactionenginecount2/3, onlyemptyidleTCS1, TCS0untouched; retainsfreshcompletion/IRQrestore/quarantine/atomiclock. NewARCAPIonlylcx.lvl/lmx.lvl exactlevels0/384, v1CMDDBstrictbounds/ARCclass/uniqueIDs/auxmonotonic/exactindex. LocalARCmalformed/truncation/duplicate/exactlevelfixturesPASS. Removed referenceDSPstandaloneTCS0writerentirely; railsnowcallsnativeAPIwithboundedEBUSYretry. Failedunvoteleavesrails_askedtrueforcleanup, notfalse-success.
