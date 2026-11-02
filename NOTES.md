@@ -1,3 +1,7 @@
+## 2026-11-02 keys RETEST temporary boot ACCEPTED after USB reconnect
+
+USER replied connectedFastboot. UniqueFastboot/productKona/downloadlimit verified; keys-on SHA70f0d1ae3a4b6c53508cf414887b361c0102024cbaa1606a21fdcdff05833c33 rechecked. fastbootboot SendingOKAY/BootingOKAY0.511s. Log M:/ios-in2020/logs/in2020-keys-retest-boot-20261102.txt; retest-boot-result.json beside image. No flash, no laterphonecommands. BootloaderacceptanceONLY, iOSstartup/powerlockwake/volumeUI resultsawaitUSER. Speakersremainunimplemented. No verified remote return path (sweetusb0), so camera-devicework condition notmet and notstarted.
+
 ## 2026-11-02 requested direct keys retest; USB unavailable
 
 USER says phone bootloader, requests direct boot after build; may leave and cannot manually return to bootloader/TWRP. Explicitly authorizes operations without additional approval; camera adaptation is conditional on agent being able to return phone to recovery/bootloader. Existing kernel41443746692 and keys-on image are already built/verified (details below), no rebuild required.
