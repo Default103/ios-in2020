@@ -186,3 +186,26 @@ Only step 7 was booted. Runtime DSP start/stop, ARC and native amplifier reads
 remain unverified until the user returns to Fastboot and the persistent log
 is captured. Step 11 must wait for that review. No speaker output or camera
 frame is claimed; automatic return is not yet implemented.
+
+## Native DSP start/stop PASS; APR test runtime pending
+
+User returned to Fastboot. Verified temporary TWRP boot accepted in 1.646s.
+Read-only log capture `logs/adsp-start7-20261102` contains 377045 bytes,
+15 flushes, no wrap; raw SHA256
+15bfc589f31d93fb508bfad0975e7171746fdeabfe4a805a6f482e6e2616e66c.
+All seven steps completed. AOP mailbox handshake succeeded. TrustZone accepted
+the signature and memory placement; 18 segments were copied/cleared with zero
+readback differences. Live ARC lookup found LCX 0x30030 index 6 and LMX
+0x30040 index 4 for level 384; shared TCS1 completed both the request and
+the subsequent level-0 release. TCS0 was not used by this implementation.
+
+TrustZone authenticated and started ADSP; `slave-kernel=0x6` reported ready
+after 29.003ms and requested its own power. At test end DSP acknowledged stop
+after 55.691ms, TrustZone shutdown returned success, and AOP accepted load-state
+off. Native TFA reads matched both recovery identities and raw MTP/R25 values.
+This confirms DSP startup/cleanup and amplifier read transport, not PCM sound.
+
+After reviewing those results, the already-built step-11 image was temporarily
+booted (Sending/Booting OKAY, 0.907s). User was asked to run about two minutes
+and return to Fastboot. APR/GLINK/audio-service results are still pending that
+log. No amplifier enable, speaker playback or camera stream was attempted.
