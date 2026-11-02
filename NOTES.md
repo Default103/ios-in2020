@@ -1,3 +1,13 @@
+## 2026-11-02 KEYS TEMPORARY BOOT ACCEPTED; visual test pending; audio INCOMPLETE
+
+Kernel41443746692SUCCESS18m59s/source836f5f6b688db22c5032cc1de364bcb32270ae26; SHA4ba3f5fe6c64445066241c33c57f54694e9fe46a73b3a8c96f8fdd2ed7b989dc verifiedfromdownloadmanifest. Host/QEMU41443511757SUCCESS; QEMUpriorv4kernelnonewPMICtest. NewactualdriverlocalXNUheaderplainARM64compilePASS5160byteobj (inheritedNDEBUGwarningonly).
+
+Actualimages builds/xnu-41443746692/in2020-keys-tests: keys-on SHA70f0d1ae3a4b6c53508cf414887b361c0102024cbaa1606a21fdcdff05833c33,bytes18460672; keys-off SHA2a69a4e0f070eaad09e90754c2ec15ac67759c1b8d46c5ecad29f5fcf0034f1c. Both588bytecmd,8CPU/120SOFTWAREHz/v4graphicsinjection; ADTlibraryupdaterABSENT; payload/loader/header/memorychecksPASS,frozenreadonly. Host-onlyoldkernelfixturesareNOTphoneimages.
+
+UniqueTWRPKona verified; adbrebootbootloader; uniqueFastbootproductKona/downloadsize/hashverified; keys-onfastbootbootSendingOKAY/BootingOKAY0.509s. NOpartitionflash/rootupdate. BootloaderacceptanceONLY; useraskedshortpowerlock,wake,volup,voldown resultsPENDING. No phonecommandsafteracceptedboot. Ifissuesusekeys-offtemporaryimage; preservecurrentrootand8CPUgraphicsbaseline. Neednewruntimekeylogs/userobservationsbeforeclaimingsuccess.
+
+Audioinputs/source/container/ADSPofflinevalidationcomplete but DSP/PCM/TFA/HAL driverNOTimplemented, SPEAKERSNOTWORKING. DoNOTstatefulltaskcomplete. Fullstatus docs/IN2020-buttons-audio-20261102.md. Originalfirmware/rawlogsoutsidegit. Userexplicitlyauthorizedpushes/buildstoDefault103/ios-in2020afterinitialautoreviewrejection; sourcebranchin2020-current.
+
 ## 2026-11-02 keys full kernel BUILDING on Intel; ADSP inputs captured
 
 836f5f6 pushed, Intelkernel41443746692 acquiredrunner andBuildinprogress. Superseded41443275083 auto-cancelled. Host/QEMU41443511757SUCCESS; QEMUoldkernelonly. New keysbootbuilder localpackagingregressionPASS with OLDf185kernel,588bytecmd; those fixtures explicitlyDO-NOT-BOOT in projects/ios-in2020/input-audio-build/packaging-host-only. FinalnewkernelpackagingNOTdone; nextwaitCI/downloadSHA,run tools/build-in2020-keys-boot.py withcorrecthash/run/commit. This emitskeys1/0 variants,8CPU/120softwareHz/currentv4graphics preserved,noADTlibraryupdater. PhoneTWRP, no reboot/flash.

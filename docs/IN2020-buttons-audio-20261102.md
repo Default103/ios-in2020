@@ -107,3 +107,39 @@ cadence; uses the original GPU ADT without the library update node; emits keys-o
 and keys-off variants. A host packaging regression using the old kernel passed
 with 588-byte command lines and all memory/ABI bounds checks. These old-kernel
 host fixtures are explicitly marked DO-NOT-BOOT and are not adapted images.
+
+
+A separate local compile of the actual new pm8150_keys.c against the downloaded
+XNU build tree and generated kernel headers passed for plain ARM64 Mach-O
+(5160-byte object). Only the inherited NDEBUG macro redefinition warning was
+reported. This checks kernel API declarations and ARM64 assembly, not full
+linking or device behavior. The source used by the cloud kernel build remains
+836f5f6; later commits add documentation/packaging only.
+
+## Final kernel and temporary boot, 2026-11-02
+
+Kernel CI 41443746692 succeeded in 18m59s, source
+836f5f6b688db22c5032cc1de364bcb32270ae26. Downloaded SHA256SUMS matched:
+4ba3f5fe6c64445066241c33c57f54694e9fe46a73b3a8c96f8fdd2ed7b989dc.
+The host/check workflow 41443511757 also succeeded; its QEMU job uses the
+previous kernel and does not exercise the new PMIC driver.
+
+Actual new-kernel images are under
+M:/ios-in2020/builds/xnu-41443746692/in2020-keys-tests/:
+
+| Variant | SHA256 | Bytes |
+| --- | --- | --- |
+| keys-on | 70f0d1ae3a4b6c53508cf414887b361c0102024cbaa1606a21fdcdff05833c33 | 18460672 |
+| keys-off | 2a69a4e0f070eaad09e90754c2ec15ac67759c1b8d46c5ecad29f5fcf0034f1c | 18460672 |
+
+Both have 588-byte commands, no ADT library-update node, 8 CPUs, unchanged GPU
+firmware and v4 graphics injection, and 120Hz software vsync. Physical panel mode
+was not changed. The binary ADT, loader, kernel ABI, payload geometry and boot
+header were checked. The generated files are read-only on the host.
+
+The unique recovery device reported kona, was rebooted to bootloader, and its
+product/download-size were checked. The keys-on image hash was rechecked and
+`fastboot boot` returned Sending OKAY / Booting OKAY in 0.509s. No partition
+flash was issued. This proves bootloader acceptance only. The user was asked to
+check power lock/wake and volume +/- in iOS; results are pending. No phone
+command was issued after the accepted boot. Audio is still unimplemented.
