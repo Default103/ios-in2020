@@ -1,3 +1,9 @@
+## 2026-11-02 DSP-start kernel COMPILING; AFE wire preparation isolated
+
+Native run41490492816 acquired Intel runner17:32:15UTC after queue; Build in progress. Source remains655a2b9 (later host-only prep commits are not this kernel). Host/QEMU41490491676 and newer camera-parser41491602269 SUCCESS. No phone commands; phone remains TWRP.
+
+Prepared fixed AFE packet serializer/header and independent packed wire fixtures, local optimized assertions-enabled PASS. Not integrated/no transport/no hardware writes. Exact original source: tertiary RX1004, SD1/channelmode2,24-bit samples,stereo,CPUmaster,48k; clock104/3.072MHz/COUPLE_NO1. GPIO137 WEST usesFUNC3,133/134/135 FUNC1 (do not assume uniformmux). Tests still needCI sanitizers. DSP acceptance/pins/startstop/PCM/TFAprotection/HAL are unfinished; do not skip step7 log review before11 or treat packets as sound support.
+
 ## 2026-11-02 DSP-start kernel QUEUED; host checks PASS
 
 655a2b9d43adf13b3a05ca8cbe63b1b220e7a235 pushed; native Intel CI41490492816 queued, host/QEMU41490491676 SUCCESS. Current ADB inventory is recovery (TWRP), not Fastboot; no new reboot/boot since prior preflight log capture. After native CI success package7 and11 with pinned firmware, STEP7 FIRST and inspect DSP-ready/shutdown/ARC/TFA logs before11. Sound output remains unimplemented.

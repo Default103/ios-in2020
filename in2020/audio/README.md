@@ -46,3 +46,13 @@ are then checked by the inherited walker. Map failures stop read-only inspection
 Remaining audio work: validate staged DSP authentication/start and APR on device, TFA9874 control and
 protection, AFE/PCM playback, then the iOS AudioServerPlugIn bridge. Do not use
 Apollo's CS35L41 amplifier tables. No claim of working audio is made.
+# IN2020 AFE packet preparation
+
+`in2020_afe_packet.h` prepares only fixed tertiary MI2S packets (port 0x1004,
+48 kHz, stereo, 24-bit samples, SD1, CPU master; clock 0x104 at 3.072 MHz,
+COUPLE_NO). It has no transport or hardware access and is not installed in
+the current kernel. `afe_packet_test.c` checks independent wire fixtures and
+invalid actions. DSP acceptance, pin mux, AFE start/stop and PCM remain untested.
+The measured GPIO137 data1 mux is function 3; GPIO133/134/135 use function 1.
+Do not copy the reference phone's primary TDM configuration or amplifier driver.
+
