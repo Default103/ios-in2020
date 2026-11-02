@@ -249,3 +249,20 @@ GC5035's ID/power metadata use byte addressing at ID register 0xf0, word
 data and a 24MHz clock. Only those metadata were used for its probe;
 its unsupported register-table width remains rejected by the V2 inspector.
 These five identity matches do not establish any XNU capture or ISP support.
+
+## Silent AFE kernel built and temporarily booted; runtime pending
+
+Run 41496215362 succeeded in 14m48s, source
+860e9940c13e567b8a8cdf2db09c345f9ede7865. The actual CI log applies 0125
+and compiles in2020_afe.c with zero failed patch hunks. Downloaded kernel
+SHA256 e50a988564c5154569d9210395eff14f71ce5879acf9e4a8043de8ff1cc781cf
+matches the artifact manifest. Host runs 41496215906 and 41497016184 passed.
+
+Milestone-12 image SHA256
+601325b2e956ce8b4ac01442cc2fe5c22f26b3f622545a5c8b8ef4e5ff73b244
+was packaged with pinned firmware, a 602-byte command and no library updater.
+Unique root TWRP, unmounted vendor/userdata, unique Kona bootloader, download
+limit and boot hash were checked. Temporary boot returned Sending/Booting OKAY
+in 0.899s. User was asked to return after about two minutes. No subsequent
+phone command was issued; port/clock responses, pad activity and cleanup are
+not yet verified. This image has no PCM stream or amplifier-enable operation.
