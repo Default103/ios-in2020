@@ -1,3 +1,11 @@
+## 2026-11-02 DSP-start STEP7 temporary boot ACCEPTED; USER RETURN PENDING
+
+Native41490492816 SUCCESS12m57s/source655a2b9d43adf13b3a05ca8cbe63b1b220e7a235, CI actual0124+adsp/rpmh/tfa compilation, zeroFAILEDhunks. KernelSHA82f60d91efd3ebbb50e2fb18e833cb2c9701ba173c40642a05fa8042d8ff3520 matchesmanifest. Artifacts builds/xnu-41490492816. Step7 boot35672064bytes SHA728e1f4fd89d8d4d4abea2a3bee67af6d5e4451d6765de7a922f113e97d6e354,601cmd; step11 samebytes SHA9df59cc311e6b88ae21b2cb0ed8bdddb18145a3c057f8b3f9bad80a09db6a8e8,602cmd; ADT17237148/no rootupdater,keys1/8CPU/graphicsbaselinepreserved. BOTHpackaged,ONLY7booted.
+
+Unique rootTWRP verified/vendor+userdataunmounted ->adbrebootbootloader ->uniqueKona/downloadlimit805306368/hash ->fastbootboot7 Sending/BootingOKAY0.905s. Record logs/in2020-adsp-step7-boot-20261102.txt and imagefolder boot-result.json. No partitionflash, no furtherphonecommands. USER asked asynchronously to run2minthenreturnFB and reply; requestPENDING. Current runtimeNOTknown. Nextwhenreturned verifyTWRPSHA81c4e03b...,temporarybootrecovery,readonlytailcapture logs/adsp-start7-20261102, inspect actualARClevel384/0,TCS1completion/nativeTFAIDs/MTP, firmwarecopyreadback/TrustZoneauth/DSPready/SHUTDOWN. ONLYif7passesreviewthenconsiderstep11 samekernel. No speakerorcameraoutputyet.
+
+Additional pureprep/diagnostic source62fbc31 pushed; kernelis655a2b9 notlatestHEAD. AFEpacketsnotlinked. Originalresetdriver reviewonly: IMEMrestart146bf65c but fullPMIC/SCMshutdownprotocolnotported; noverifiedauto-returnchannel. Do not use old Redmi shimresetconstants orclaimPSCIcanreturnFB.
+
 ## 2026-11-02 recovery amp status READ; stock TFADSP strings found
 
 Unique rootTWRP verified. Static media_inventory --tfa-status built SHAfd420901c9acb3d60f4829ba7f0220cf49924b26622edfbc817ed064ab93368d, pushed/tmp only. Skipscameraopens, bounddrivercheck, gateID0c74thenreadregs00/f0/f5 only; allI2Creturn2. Bothamps power00=0001(PWDN1,AMPE0),MTPf0=0003(OTC1,EX1),R25nonzero; per-devicecalibrationraw keptprivate hardware/speaker-camera-20261102/tfa-status-recovery.json. Noreset/enable/OTPdatawrites.

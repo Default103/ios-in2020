@@ -162,3 +162,27 @@ not proof none is needed. Captured stock adsp.b11 does contain `tfadsp_bgth`,
 the built-in TFADSP path, but only live AFE responses can establish availability.
 AFE packet source da931fe passed sanitizer host/QEMU workflow 41492629387;
 its QEMU portion uses the previous kernel and does not test physical MI2S.
+
+## DSP-start test boot accepted; runtime log pending
+
+Native run 41490492816 succeeded in 12m57s on the Intel runner, source
+655a2b9d43adf13b3a05ca8cbe63b1b220e7a235. Actual CI log contains the
+0124 overlay and compilation of the new ADSP, shared RPMh and TFA modules,
+with zero failed patch hunks. Downloaded kernel hash matches its manifest:
+82f60d91efd3ebbb50e2fb18e833cb2c9701ba173c40642a05fa8042d8ff3520.
+
+Step 7 boot image: 35672064 bytes, SHA256
+728e1f4fd89d8d4d4abea2a3bee67af6d5e4451d6765de7a922f113e97d6e354.
+Step 11: same size, SHA256
+9df59cc311e6b88ae21b2cb0ed8bdddb18145a3c057f8b3f9bad80a09db6a8e8.
+Both carry the same pinned firmware/17237148-byte ADT, 601/602-byte commands,
+and no library updater. The existing keys, eight CPUs and graphics baseline
+are retained. Both are temporary boot artifacts outside git.
+
+After confirming unique root TWRP and no userdata/vendor mount, recovery
+rebooted to bootloader. Unique Kona, 805306368-byte download limit and step-7
+hash were verified. `fastboot boot` returned Sending/Booting OKAY in 0.905s.
+Only step 7 was booted. Runtime DSP start/stop, ARC and native amplifier reads
+remain unverified until the user returns to Fastboot and the persistent log
+is captured. Step 11 must wait for that review. No speaker output or camera
+frame is claimed; automatic return is not yet implemented.
