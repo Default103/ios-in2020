@@ -75,6 +75,7 @@ void in2020_afe_probe(void) {
     (void)PE_parse_boot_argn("in2020adsp",&requested,sizeof(requested));
     if(requested!=12 && requested!=13 && requested!=14 && requested!=15)return;
     printf("IN2020 AFE: milestone=%u %s\n",requested,
+        requested==15 ? "continuous iOS speaker stream requested" :
         requested==14 ? "audible speaker test requested" : "silent test; amplifiers remain off");
     if(!in2020_tfa_confirm_off())return;
     int pins_result=take_pins();

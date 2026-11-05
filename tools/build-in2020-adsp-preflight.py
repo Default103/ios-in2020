@@ -59,13 +59,13 @@ if a.adsp_step == 15:
         name = name.removeprefix('./')
         assert '..' not in Path(name).parts
         checks[name] = sha
-    for i, name in enumerate(('HakiosAudio.driver/HakiosAudio', 'HakiosAudio.driver/Info.plist')):
+    for i, name in enumerate(('HakiosAudio.driver/HakiosAudio', 'HakiosAudio.driver/Info.plist', 'HakiosAudio.driver/_CodeSignature/CodeResources')):
         data = (hal / name).read_bytes()
         assert digest(data) == checks[name] and 0 < len(data) <= 1024**2
         if i == 0:
             assert struct.unpack_from('<II', data) == (0xfeedfacf, 0x100000c)
             assert struct.unpack_from('<I', data, 8)[0] == 0
-        else:
+        elif i == 1:
             info = plistlib.loads(data)
             assert info['CFBundleExecutable'] == 'HakiosAudio'
             assert info['CFPlugInFactories']['7C3E5B0A-52D4-4F6B-9E0D-6B1A2D7F0C51'] == 'HakiosAudio_Create'

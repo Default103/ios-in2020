@@ -1,4 +1,4 @@
-/* IN2020 silent PCM transport test, no amplifier enable or iOS audio sink.
+/* IN2020 PCM transport: silent probe or continuous iOS speaker output.
  * ABI references: pinned OnePlus audio 0ac91e89 (APR/ASM/ADM), OnePlus kernel
  * 98719830 (SMMUv500), and HakiOS a3384e03 hakios.sound.c (transport layout).
  * Only a new, unclaimed SMR and disabled/empty context may be used. Existing
@@ -34,6 +34,8 @@ static bool published,quarantined;
 static uint32_t handle;
 static unsigned pending,done,errors,underflows;
 static unsigned tokens[8];
+static uint32_t global_before[4];
+static const unsigned global_regs[4]={0x48,0x50,0x54,0x58};
 static uint32_t rd(vm_offset_t p,unsigned off) {
     uint32_t v=*(volatile uint32_t *)(p+off);
     __asm__ volatile("dmb oshld" ::: "memory");return v;
@@ -53,16 +55,34 @@ static bool tlb(void) {
     }
     return false;
 }
+/* Global fault latches belong to all streams and may predate this driver.
+ * Preserve them; never clear firmware evidence or another device's faults.
+ * Our new context must start fault-free. Any global snapshot change stops DMA.
+ */
+static bool global_unchanged(void) {
+    for(unsigned i=0;i<4;++i) {
+        uint32_t value=rd(smmu,global_regs[i]);
+        if(value==0xffffffff || value!=global_before[i]) {
+            printf("IN2020 PCM: global fault state changed reg=%#x before=%#x now=%#x\n",
+                global_regs[i],global_before[i],value);return false;
+        }
+    }
+    return true;
+}
 static bool memory_on(void) {
     smmu=ml_io_map(0x15000000,0x100000);
     if(!smmu)return false;
     uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
+    for(unsigned i=0;i<4;++i)global_before[i]=rd(smmu,global_regs[i]);
+    printf("IN2020 PCM: inherited GFSR=%#x SYNR=%#x/%#x/%#x; preserved\n",
+        global_before[0],global_before[1],global_before[2],global_before[3]);
     unsigned matches=id0&255,contexts=id1&255,stage2=(id1>>16)&255;
     unsigned page=(id1>>31)?0x10000:0x1000,pages=2u<<((id1>>28)&7);
     printf("IN2020 PCM: SMMU scr=%#x id0=%#x id1=%#x SMRs=%u CBs=%u S2CBs=%u\n",scr,id0,id1,matches,contexts,stage2);
     if(scr==0xffffffff || id0==0xffffffff || id1==0xffffffff || (scr&8) ||
        !matches || matches>128 || !contexts || contexts>128 || stage2>=contexts ||
-       2u*page*pages!=0x100000 || contexts>pages || rd(smmu,0x48))return false;
+       2u*page*pages!=0x100000 || contexts>pages || !global_unchanged())return false;
+    delay_for_interval(1,NSEC_PER_MSEC);if(!global_unchanged())return false;
     bool used[128]={false};match=~0u;context=~0u;
     for(unsigned i=0;i<matches;++i) {
         uint32_t s=rd(smmu,0x800+4*i),c=rd(smmu,0xc00+4*i);
@@ -81,7 +101,7 @@ static bool memory_on(void) {
         if(!used[i] && rd(p,0)==0 && rd(p,0x20)==0 && rd(p,0x24)==0 &&
            rd(p,0x28)==0 && rd(p,0x2c)==0 && rd(p,0x58)==0) {context=i;cb=p;break;}
     }
-    if(context==~0u)return false;
+    if(context==~0u) {printf("IN2020 PCM: no unclaimed empty context\n");return false;}
     gr1=smmu+page;old_cbar=rd(gr1,4*context);old_cba2r=rd(gr1,0x800+4*context);
     if(old_cbar==0xffffffff || old_cba2r==0xffffffff)return false;
     for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i) {
@@ -103,6 +123,7 @@ static bool memory_on(void) {
     __asm__ volatile("dsb sy" ::: "memory");
     printf("IN2020 PCM: new SMR=%u CB=%u IOVA=%#x bytes=%u; table PA=%#llx\n",match,context,AUDIO_IOVA,MEMORY_BYTES,root_pa);
     /* After the first write, any failed verification retains memory until reset. */
+    if(!global_unchanged())return false;
     quarantined=true;
     bool ok=sync_reg(gr1,0x800+4*context,1) && sync_reg(gr1,4*context,0x1f300) &&
         sync_reg(cb,0x10,0x38011) && sync_reg(cb,0x30,0x803519) &&
@@ -177,7 +198,7 @@ static bool pcm_run(bool continuous) {
         unsigned completed_now=__atomic_load_n(&done,__ATOMIC_ACQUIRE);
         if(continuous) {
             stalled=completed_now==last_done ? stalled+1 : 0;last_done=completed_now;
-            if(stalled>2000 || rd(cb,0x58) || rd(smmu,0x48))break;
+            if(stalled>2000 || rd(cb,0x58) || !global_unchanged())break;
             /* Prove real DMA completions before enabling the protected amplifiers. */
             if(!amplifiers && completed_now>=8) {
                 if(!in2020_speaker_start())break;
@@ -210,7 +231,7 @@ static bool pcm_run(bool continuous) {
     unsigned completed=__atomic_load_n(&done,__ATOMIC_ACQUIRE);
     unsigned failed=__atomic_load_n(&errors,__ATOMIC_ACQUIRE);
     unsigned outstanding=__atomic_load_n(&pending,__ATOMIC_ACQUIRE);
-    success=completed==64 && submitted==64 && !failed && !outstanding && !rd(cb,0x58) && !rd(smmu,0x48);
+    success=completed==64 && submitted==64 && !failed && !outstanding && !rd(cb,0x58) && global_unchanged();
     printf("IN2020 PCM: submitted=%u done=%u errors=%u pending=%#x underflows=%u FSR=%#x global=%#x success=%d\n",
         submitted,completed,failed,outstanding,__atomic_load_n(&underflows,__ATOMIC_ACQUIRE),rd(cb,0x58),rd(smmu,0x48),success);
 cleanup:

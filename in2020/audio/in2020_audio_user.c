@@ -40,7 +40,11 @@ unsigned in2020_audio_take(int16_t *dest,unsigned count) {
     bzero(dest+2*take,(count-take)*4);
     return take;
 }
-static int audio_open(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {return 0;}
+static int audio_open(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {
+    static unsigned opens;
+    if(__atomic_fetch_add(&opens,1,__ATOMIC_RELAXED)<8)printf("IN2020 AUDIO: audio client opened PCM device\n");
+    return 0;
+}
 static int audio_close(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {return 0;}
 static int audio_write(__unused dev_t dev,struct uio *uio,__unused int flags) {
     int16_t data[1024*2];
@@ -149,12 +153,13 @@ static int directory(const char *path,bool create) {
 static int install_plugin(DTEntry node) {
     const char *base="/System/Library/Audio/Plug-Ins/HAL";
     const char *bundle="/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver";
-    const char *paths[2]={"/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/HakiosAudio",
-        "/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/Info.plist"};
-    const uint8_t *bytes[2];unsigned sizes[2];
-    /* No mutation until both package hashes and every existing file are validated. */
+    const char *paths[3]={"/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/HakiosAudio",
+        "/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/Info.plist",
+        "/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/_CodeSignature/CodeResources"};
+    const uint8_t *bytes[3];unsigned sizes[3];
+    /* No mutation until all package hashes and every existing file are validated. */
     int err=directory(base,false);if(err)return err;
-    for(unsigned i=0;i<2;++i) {
+    for(unsigned i=0;i<3;++i) {
         const void *prop=NULL;char key[16];unsigned n=0;uint8_t hash[32];
         snprintf(key,sizeof(key),"hal-file%u",i);
         if(SecureDTGetProperty(node,key,&prop,&n)!=kSuccess || n<=32 || n-32>LIMIT)return EINVAL;
@@ -165,7 +170,8 @@ static int install_plugin(DTEntry node) {
         if(!err && memcmp(hash,bytes[i],32))return EPERM;
     }
     err=directory(bundle,true);if(err)return err;
-    for(unsigned i=0;i<2;++i) {
+    err=directory("/System/Library/Audio/Plug-Ins/HAL/HakiosAudio.driver/_CodeSignature",true);if(err)return err;
+    for(unsigned i=0;i<3;++i) {
         char stage[192];stage_name(stage,sizeof(stage),paths[i],bytes[i],"stage");
         err=create_file(stage,bytes[i]+32,sizes[i],bytes[i]);if(err)return err;
         /* Existing matching final files can be left intact; never replace other bytes. */
