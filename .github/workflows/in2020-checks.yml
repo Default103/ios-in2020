@@ -38,6 +38,10 @@ jobs:
           ./pcm-context-test
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/audio/speaker_profile_test.c -o speaker-profile-test
           ./speaker-profile-test
+      - name: Check native camera route and overlay
+        run: |
+          python3 tools/check-in2020-camera.py
+          python3 in2020/camera/board_test.py
       - name: Test fixed camera probe packet ABI
         run: |
           python3 in2020/sensor_v2_test.py
