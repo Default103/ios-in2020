@@ -1,3 +1,7 @@
+## 2026-11-05 active CAMERA handoff
+
+Currentcamera249116a pushed, host42117637905hostSUCCESS/QEMUpending(usespreviouskernel,notcameraHW). LocalactualXNUcompilecamera.cPASS, actualFDTroute+kernelheaderPASS, syntheticboard/frontmodefixturesPASS, audio+camerapatchconsistencyPASS. PhoneunchangedTWRP; no sensor writes inthiscamera turn. No newfullkernelCIstarted; awaitingUSERnotificationonspeaker42113591117 asrequested. Camera0131 andfrontmodeplanreadyfornextkernel/preflight, butcannottestin42113591117 (its sourcef404478 predatescamera). Firstcameraimage shouldin2020cam1 observeronly, reviewPM8009SID/APID/VSET andfrontpinstatebeforenativepower/MCLK/CCI-ID. NOcamera-frame/iOSpreview successclaim.
+
 ## 2026-11-05 CAMERA native preflight committed; bounded front-mode plan checked
 
 Camera source0355f07 pushed; host42117076254hostSUCCESS/QEMUstillpending(consoleonlypreviouskernel42109996047). No newfullkernelbuild/camera boot; speaker42113591117 leftaloneawaitUSERnotification.
