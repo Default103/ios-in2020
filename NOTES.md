@@ -1,3 +1,11 @@
+## 2026-11-05 speaker STEP15R3 BOOT ACCEPTED; await user sound and FB return
+
+USER buildcomplete. Native42113591117SUCCESS sourcef4044786cf88b7111575a9f264cccb5cc13c1759, host42113596167SUCCESS. Downloadkernel/buildlogverify0130compiled/noFAILEDhunks. KernelSHA7cc8d06244e71ad7c4f022015b31e4d2be2ae48fbdbb7b518c19df30e12d3f7c matchesmanifest. Newimage builds/xnu-42113591117/in2020-ios-audio-step15-r3/in2020-ios16-adsp-step15-boot.img SHA39b4f9c2c7a3beeae642a1b9074c7af506eabb2a072c75ab802d0272aa1cb14d,602cmd; HAL41544746613all3files retained. Imagecontains0130audiofix, NOT0131camera.
+
+Unique rootTWRP/unmounteduserdata/vendor/data->FBuniqueKona/max805306368/hashverified->fastbootboot Sending/BootingOKAY0.903s. logs/in2020-ios-audio-step15-r3-boot-20261105.txt andboot-result.json. PHONE LEFT RUNNINGR3; no subsequentUSBcommands. USER toplaymusic/ringtone+volume/mute, thenmanualFBreturn. NextverifiedTWRPtempboot+NEWreadonlycapture logs/ios-audio15-r3-20261105; WindowsADBmayneedphysicalUSBreconnectafterTWRP. InspectCBcandidateSCTLR/FSR/TLB+newSMR/CB/mapacks/WRITE_DONE/ampenable/AUDIOframes. No actualPCM/sound successclaimed.
+
+Camera source249116a/preflight0355f07 remainsprepared; now oldaudioCIcomplete, newcamera-containing fullkernelbuildmayrun whileUSERtestsR3, no phonecamera bootbeforeR3logrecovery. Camera currentcodeobserveronlyin2020cam1; still noframe/nativepower. Host42117637905hostSUCCESS (consoleQEMUunrelatedhardware).
+
 ## 2026-11-05 active CAMERA handoff
 
 Currentcamera249116a pushed, host42117637905hostSUCCESS/QEMUpending(usespreviouskernel,notcameraHW). LocalactualXNUcompilecamera.cPASS, actualFDTroute+kernelheaderPASS, syntheticboard/frontmodefixturesPASS, audio+camerapatchconsistencyPASS. PhoneunchangedTWRP; no sensor writes inthiscamera turn. No newfullkernelCIstarted; awaitingUSERnotificationonspeaker42113591117 asrequested. Camera0131 andfrontmodeplanreadyfornextkernel/preflight, butcannottestin42113591117 (its sourcef404478 predatescamera). Firstcameraimage shouldin2020cam1 observeronly, reviewPM8009SID/APID/VSET andfrontpinstatebeforenativepower/MCLK/CCI-ID. NOcamera-frame/iOSpreview successclaim.
