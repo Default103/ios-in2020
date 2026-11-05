@@ -63,3 +63,10 @@ Build with `tools/build-in2020-camera-raw.py` and a kernel containing patch
 Host checks and cross-compilation pass; actual native frame capture remains
 unverified. Earlier stage-1-only next steps above are superseded by this
 integrated capture at the user's request.
+
+After returning from the native boot, retrieve the exact successful export
+path recorded in the kernel log using `tools/read-in2020-native-raw.py`.
+It reads bounded userdata blocks from root TWRP without mounting or writing
+the partition, resolves the HFS+ catalog and checks the complete frame CRC.
+The camera itself runs only in XNU. The reader refuses unsupported overflow
+extents, ambiguous paths, unexpected geometry and incomplete payloads.
