@@ -1,3 +1,5 @@
+Camera-containing native CI dispatched42118403895/sourceabc91eb; pendingfullbuild. Do not confuse it with USER-running speaker42113591117/f404478. No cameraimagepackaged/booted yet.
+
 ## 2026-11-05 speaker STEP15R3 BOOT ACCEPTED; await user sound and FB return
 
 USER buildcomplete. Native42113591117SUCCESS sourcef4044786cf88b7111575a9f264cccb5cc13c1759, host42113596167SUCCESS. Downloadkernel/buildlogverify0130compiled/noFAILEDhunks. KernelSHA7cc8d06244e71ad7c4f022015b31e4d2be2ae48fbdbb7b518c19df30e12d3f7c matchesmanifest. Newimage builds/xnu-42113591117/in2020-ios-audio-step15-r3/in2020-ios16-adsp-step15-boot.img SHA39b4f9c2c7a3beeae642a1b9074c7af506eabb2a072c75ab802d0272aa1cb14d,602cmd; HAL41544746613all3files retained. Imagecontains0130audiofix, NOT0131camera.
