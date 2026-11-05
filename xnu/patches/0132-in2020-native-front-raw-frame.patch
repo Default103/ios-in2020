@@ -1,0 +1,833 @@
+--- a/bsd/dev/in2020_camera.c
++++ b/bsd/dev/in2020_camera.c
+@@ -43,6 +43,15 @@
+     }
+     return false;
+ }
++bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out);
++bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out) {
++    if(!out || (ppid!=0xb42 && ppid!=0xb46 && ppid!=0x5a0 && ppid!=0x148) ||
++       (reg!=4 && reg!=5 && reg!=8 && reg!=0x40 && reg!=0x41 && reg!=0x45 && reg!=0x46))return false;
++    if(!core) {
++        core=ml_io_map(0xc440000,0x2000);cnfg=ml_io_map(0xc40a000,0x1000);observer=ml_io_map(0xe600000,0x10000);
++    }
++    return core && cnfg && observer && rd(core,0)==0x50010000 && read_byte(find_apid(ppid),reg,out);
++}
+ static void peripheral(unsigned ppid) {
+     static const unsigned regs[]={4,5,8,0x40,0x41,0x45,0x46};
+     unsigned apid=find_apid(ppid);
+@@ -54,7 +63,9 @@
+     printf("IN2020 CAMERA: PMIC PPID=%#x APID=%u owner=%u type=%#x subtype=%#x status=%#x VSET=%#x/%#x mode=%#x enable=%#x\n",
+         ppid,apid,rd(cnfg,0x700+4*apid)&7,v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
+ }
+-static void camera_thread(__unused void *arg,__unused wait_result_t result) {
++extern void in2020_camera_capture(void);
++static void camera_thread(void *arg,__unused wait_result_t result) {
++    if((uintptr_t)arg==2) {in2020_camera_capture();return;}
+     printf("IN2020 CAMERA: stage1 front IMX471 slot2 CCI1/master1 PHY3; observe only\n");
+     printf("IN2020 CAMERA: route CSIPHY=%#x CSID-lite480=%#x IFE-lite480=%#x IFE-SIDs=%#x..%#x mask=%#x; ISP not read\n",
+         IN2020_CAMERA_PHY_BASE,IN2020_CAMERA_CSID_LITE,IN2020_CAMERA_IFE_LITE,
+@@ -84,7 +95,7 @@
+     (void)PE_parse_boot_argn("in2020cam",&stage,sizeof(stage));
+     if(!stage)return;
+     started=true;
+-    if(stage!=1) {printf("IN2020 CAMERA: unsupported stage=%u\n",stage);return;}
+-    if(kernel_thread_start(camera_thread,NULL,&thread)==KERN_SUCCESS)thread_deallocate(thread);
++    if(stage!=1 && stage!=2) {printf("IN2020 CAMERA: unsupported stage=%u\n",stage);return;}
++    if(kernel_thread_start(camera_thread,(void *)(uintptr_t)stage,&thread)==KERN_SUCCESS)thread_deallocate(thread);
+     else printf("IN2020 CAMERA: cannot start observer thread\n");
+ }
+--- /dev/null
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -0,0 +1,173 @@
++/* Finite IMX471 -> CSIPHY1.2.1 -> CSID-lite480 -> IFE-lite Bus v3 RAW10.
++ * Numeric registers checked against OnePlusOSS 98719830. No test generator.
++ * One wired buffer; only a fresh WM completion + intact guards permits export.
++ */
++#include <pexpert/device_tree.h>
++#include <sys/fcntl.h>
++#include <sys/errno.h>
++#include <sys/vnode.h>
++#include <sys/uio.h>
++#include <sys/proc.h>
++#include "in2020_camera_raw.h"
++#include "in2020_camera_plan.h"
++static vm_offset_t phy,csid,ife,gic;
++static const unsigned irqs[3]={480,500,501};
++static uint32_t irq_old[3];static unsigned irq_masked;
++static bool phy_active,csid_active,ife_active;
++static bool irqs_take(void) {
++    gic=ml_io_map(0x17a00000,0x10000);if(!gic)return false;
++    for(unsigned i=0;i<3;++i) {
++        unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
++        if(cr_read(gic,0x200+reg)&bit)return false;
++        irq_old[i]=cr_read(gic,0x100+reg)&bit;
++        if(irq_old[i])cr_write(gic,0x180+reg,bit);
++        ++irq_masked;
++    }
++    return true;
++}
++static void irqs_restore(bool clean) {
++    if(!clean) {printf("IN2020 RAW: camera GIC IRQs remain masked after uncertain cleanup\n");return;}
++    for(unsigned i=0;i<irq_masked;++i) {
++        unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
++        cr_write(gic,0x280+reg,bit);
++        if(irq_old[i])cr_write(gic,0x100+reg,bit);
++    }
++}
++static bool phy_up(void) {
++    DTEntry node;const void *property=NULL;unsigned length=0;
++    if(SecureDTLookupEntry(NULL,"/in2020-camera",&node)!=kSuccess ||
++       SecureDTGetProperty(node,"phy-ops",&property,&length)!=kSuccess || length<8)return false;
++    const uint8_t *p=property;unsigned n=cp32(p);
++    if(n>128 || length!=8+n*8 || cp32(p+4)!=cp_crc(p+8,n*8))return false;
++    for(unsigned i=0;i<n;++i) {
++        unsigned at=cp32(p+8+i*8),value=cp32(p+12+i*8);
++        if((at&3) || at>=0x1000 || value>255)return false;
++    }
++    phy=ml_io_map(IN2020_CAMERA_PHY_BASE,0x2000);if(!phy)return false;phy_active=true;
++    cr_write(phy,0x800,1);delay(5);cr_write(phy,0x800,0);delay(5);
++    for(unsigned i=0;i<n;++i)cr_write(phy,cp32(p+8+i*8),cp32(p+12+i*8));
++    for(unsigned i=0;i<11;++i) {cr_write(phy,0x82c+4*i,0);cr_write(phy,0x858+4*i,0xff);}
++    cr_write(phy,0x828,1);cr_write(phy,0x828,0);
++    return true;
++}
++static bool paths_up(void) {
++    csid=ml_io_map(IN2020_CAMERA_CSID_LITE,0x1000);ife=ml_io_map(IN2020_CAMERA_IFE_LITE,0x3000);
++    if(!csid || !ife)return false;
++    uint32_t cv=cr_read(csid,0),iv=cr_read(ife,0);
++    printf("IN2020 RAW: CSID480 version=%#x IFE-lite48x version=%#x\n",cv,iv);
++    if(!cv || cv==0xffffffff || !iv || iv==0xffffffff)return false;
++    csid_active=true;
++    cr_write(csid,0x24,0);cr_write(csid,0x74,1);
++    for(unsigned i=0;i<4;++i) {cr_write(csid,0x34+i*16,0);cr_write(csid,0x38+i*16,0x7fff);}
++    cr_write(csid,0x28,0x0fffffff);cr_write(csid,0x78,1);cr_write(csid,0x80,1);
++    cr_write(csid,0x104,0x80);
++    for(unsigned reset=0;reset<2;++reset) {
++        cr_write(csid,0x10,reset?0x1e:1);
++        if(!cr_wait(csid,0x70,1,1,100000)) {printf("IN2020 RAW: CSID reset timeout kind=%u\n",reset);return false;}
++        cr_write(csid,0x78,1);cr_write(csid,0x80,1);
++    }
++    const uint32_t cfg0=(0x2bu<<16)|(0xfu<<12)|4u|3u;
++    if(!cr_put(csid,0x100,3u|(0x3210u<<4)|(3u<<20),~0u) || !cr_put(csid,0x104,0x41,~0u) ||
++       !cr_put(csid,0x200,cfg0,~0u) || !cr_put(csid,0x204,2,~0u))return false;
++    static const uint32_t rdi[][2]={{0x20c,0},{0x210,1},{0x214,0},{0x218,1},{0x224,0},{0x228,1},{0x22c,0},{0x230,1}};
++    for(unsigned i=0;i<8;++i)if(!cr_put(csid,rdi[i][0],rdi[i][1],~0u))return false;
++    cr_write(csid,0x208,0);cr_write(csid,0x200,cfg0|(1u<<31));
++    cr_write(csid,0x208,1);cr_write(csid,0x34,0x7e);
++    /* IFE-lite48x TOP v3 reset, not vfe17x's reset word/register. */
++    ife_active=true;
++    cr_write(ife,0x28,0x20000);cr_write(ife,0x2c,0);cr_write(ife,0x30,0);cr_write(ife,0xc,2);
++    if(!cr_wait(ife,0x40,0x20000,0x20000,100000)) {printf("IN2020 RAW: IFE reset timeout status=%#x\n",cr_read(ife,0x40));return false;}
++    cr_write(ife,0x34,~0u);cr_write(ife,0x38,~0u);cr_write(ife,0x3c,~0u);cr_write(ife,0x24,1);
++    cr_write(ife,0x1a08,0x3ffffff);cr_write(ife,0x1adc,0);
++    cr_write(ife,0x1a20,~0u);cr_write(ife,0x1a24,~0u);cr_write(ife,0x1a30,1);
++    if(!cr_put(ife,0x1c00,0,0x30001) || !cr_put(ife,0x1c0c,0xffff,~0u) ||
++       !cr_put(ife,0x1c10,0,~0u) || !cr_put(ife,0x1c14,CR_STRIDE,~0u) ||
++       !cr_put(ife,0x1c18,0,~0u) || !cr_put(ife,0x1c08,CR_BYTES,~0u) ||
++       !cr_put(ife,0x1c64,0xf,0xf))return false;
++    cr_write(ife,0x1c28,0);cr_write(ife,0x1c30,0);cr_write(ife,0x1c34,1);
++    cr_write(ife,0x1c38,0);cr_write(ife,0x1c3c,1);
++    cr_write(ife,0x1a18,0x10);cr_write(ife,0x1a1c,0);cr_write(ife,0x28,0x10);
++    cr_write(ife,0x1c04,CR_IOVA+4096);
++    if(!cr_put(ife,0x1c00,0x10001,0x30001))return false;
++    cr_write(ife,0x1270,0);cr_write(ife,0x20,1);
++    return true;
++}
++static void show_paths(void) {
++    if(csid)printf("IN2020 RAW: CSID rx=%#x packets=%u ECC=%#x CRC=%#x RDI=%#x status=%#x bytes=%u/%u\n",
++        cr_read(csid,0x20),cr_read(csid,0x160),cr_read(csid,0x164),cr_read(csid,0x168),
++        cr_read(csid,0x30),cr_read(csid,0x250),cr_read(csid,0x2e0),cr_read(csid,0x2e4));
++    if(ife)printf("IN2020 RAW: IFE top=%#x/%#x/%#x bus=%#x/%#x CCIF=%#x overflow=%#x size=%#x WM=%#x/%#x\n",
++        cr_read(ife,0x40),cr_read(ife,0x44),cr_read(ife,0x48),cr_read(ife,0x1a28),cr_read(ife,0x1a2c),
++        cr_read(ife,0x1a64),cr_read(ife,0x1a68),cr_read(ife,0x1a70),cr_read(ife,0x1c7c),cr_read(ife,0x1c80));
++}
++static bool paths_down(void) {
++    bool ok=true;
++    if(ife_active) {
++        cr_write(ife,0x1c00,0);cr_write(ife,0x20,1);delay(1000);
++        ok=(cr_read(ife,0x1c00)&1)==0;
++        cr_write(ife,0x1a18,0);cr_write(ife,0x1a1c,0);cr_write(ife,0x28,0);
++        cr_write(ife,0x1a20,~0u);cr_write(ife,0x1a24,~0u);cr_write(ife,0x1a30,1);
++        cr_write(ife,0x34,~0u);cr_write(ife,0x38,~0u);cr_write(ife,0x3c,~0u);cr_write(ife,0x24,1);
++    }
++    if(csid_active) {
++        cr_write(csid,0x34,0);cr_write(csid,0x208,2);
++        cr_write(csid,0x200,cr_read(csid,0x200)&~(1u<<31));cr_write(csid,0x100,0);
++        cr_write(csid,0x24,0);cr_write(csid,0x74,0);
++        cr_write(csid,0x38,0x7fff);cr_write(csid,0x28,0x0fffffff);cr_write(csid,0x78,1);cr_write(csid,0x80,1);
++        ok=!(cr_read(csid,0x200)&(1u<<31))&&ok;
++    }
++    if(phy_active) {
++        cr_write(phy,0x814,0);delay(5);cr_write(phy,0x818,0);cr_write(phy,0x81c,0);
++        cr_write(phy,0x800,1);delay(1);cr_write(phy,0x800,0);
++        ok=cr_read(phy,0x814)==0&&ok;
++    }
++    return ok;
++}
++struct frame_header {char magic[8];uint32_t version,width,height,stride,bits,crc,flags,reserved;uint64_t time,reserved64[2];};
++_Static_assert(sizeof(struct frame_header)==64,"RAW file ABI");
++static bool export_frame(uint32_t crc) {
++    struct frame_header h={{'I','2','0','F','R','A','M','E'},1,CR_WIDTH,CR_HEIGHT,CR_STRIDE,10,crc,1,0,mach_absolute_time(),{0}};
++    char path[160];snprintf(path,sizeof(path),"/private/var/tmp/in2020-front-raw10-%llu.bin",h.time);
++    vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;
++    int err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0600,0,&vp,ctx),resid=0;
++    if(!err)err=vn_rdwr(UIO_WRITE,vp,(caddr_t)&h,sizeof(h),0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++    if(!err && resid)err=EIO;
++    if(!err)err=vn_rdwr(UIO_WRITE,vp,(caddr_t)cr_dma_data(),CR_BYTES,sizeof(h),UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++    if(vp)(void)vnode_close(vp,FWRITE,ctx);
++    printf("IN2020 RAW: export path=%s bytes=%u crc=%#x error=%d residual=%d\n",path,CR_BYTES,crc,err,resid);
++    return !err && !resid;
++}
++void in2020_camera_capture(void) {
++    bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false;
++    printf("IN2020 RAW: native one-frame IMX471 RAW10 %ux%u stride=%u; no TPG/recovery backend\n",CR_WIDTH,CR_HEIGHT,CR_STRIDE);
++    if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return;}
++    delay_for_interval(5,NSEC_PER_SEC); /* let existing input/power bring-up finish */
++    if(!irqs_take())goto end;
++    clocks=true;if(!cr_clocks_up())goto end;
++    sensor=true;if(!cr_sensor_up() || !cr_sensor_program())goto end;
++    dma=true;if(!cr_dma_up() || !phy_up() || !paths_up())goto end;
++    stream=true;if(!cr_sensor_stream(true))goto end;
++    for(unsigned ms=0;ms<3000;++ms) {
++        if((cr_read(ife,0x1a28)&0x10)) {frame=true;printf("IN2020 RAW: fresh WM0 completion after %u ms\n",ms);break;}
++        if(cr_read(ife,0x1a64) || cr_read(ife,0x1a68) || cr_read(ife,0x1a70))break;
++        delay_for_interval(1,NSEC_PER_MSEC);
++    }
++end:
++    show_paths();
++    bool stopped=!stream || cr_sensor_stream(false);
++    stopped=paths_down()&&stopped;
++    if(sensor)stopped=cr_sensor_down()&&stopped;
++    if(clocks)stopped=cr_clocks_down()&&stopped;
++    if(frame && dma && stopped) {
++        cr_dma_invalidate();
++        if(cr_dma_ok()) {
++            const uint8_t *p=cr_dma_data();unsigned changed=0;
++            for(unsigned i=0;i<CR_BYTES;++i)changed+=p[i]!=0xa5;
++            uint32_t crc=cp_crc(p,CR_BYTES);delay_for_interval(10,NSEC_PER_MSEC);cr_dma_invalidate();
++            if(changed>CR_BYTES/16 && cp_crc(p,CR_BYTES)==crc && cr_dma_ok())exported=export_frame(crc);
++        }
++    }
++    if(dma)cr_dma_down(stopped);
++    irqs_restore(stopped);
++    printf("IN2020 RAW: result frame-IRQ=%d cleanup=%d exported=%d; success requires valid file payload\n",frame,stopped,exported);
++}
+--- /dev/null
++++ b/bsd/dev/in2020_camera_clocks.c
+@@ -0,0 +1,124 @@
++/* SM8250 kona-v2 camera clocks/power, bounded one-frame use. APSL2.0.
++ * Numeric configuration from pinned camcc-kona.c, gcc-kona.c, refgen.c.
++ * Never configures PLL2; MCLK comes directly from TCXO. Shared state retained.
++ */
++#include "in2020_camera_raw.h"
++static vm_offset_t cc,gcc,refgen;
++struct clock_branch {bool gcc;unsigned offset;uint32_t old;bool owned;};
++static struct clock_branch branches[]={
++    {true,0xb008,0,false},{true,0xb040,0,false},{true,0xb02c,0,false},{true,0xb030,0,false},
++    {false,0xc0f4,0,false},{false,0xc114,0,false},{false,0x607c,0,false},{false,0x6078,0,false},
++    {false,0xc040,0,false},{false,0xc044,0,false},{false,0xc018,0,false},
++    {false,0xc03c,0,false},{false,0xc034,0,false}};
++struct clock_root {unsigned cmd,value;uint32_t old;bool owned;};
++static struct clock_root roots[]={
++    {0x7058,0x20e,0,false},{0xc0f8,0x203,0,false},{0xa068,0x202,0,false},
++    {0x6060,0x203,0,false},{0xc01c,0x202,0,false},{0xc000,0x301,0,false}};
++static const unsigned pll_regs[]={0,4,8,0xc,0x10,0x14,0x18,0x1c,0x20,0x38,0x40};
++static uint32_t pll_old[11],gdsc_old,ref_old,mclk_cfg,mclk_branch;
++static bool arc_owned,pll_owned,gdsc_owned,ref_owned,mipi_owned,mclk_owned;
++static bool branch_on(unsigned i) {
++    struct clock_branch *b=&branches[i];vm_offset_t p=b->gcc?gcc:cc;
++    b->old=cr_read(p,b->offset);if(b->old==0xffffffff)return false;
++    if(b->old&1)return true;
++    b->owned=true;
++    return cr_put(p,b->offset,b->old|1u,1) && cr_wait(p,b->offset,1u<<31,0,2000);
++}
++static bool update(unsigned cmd) {
++    cr_write(cc,cmd,cr_read(cc,cmd)|1u);
++    if(cr_wait(cc,cmd,1,0,2000))return true;
++    printf("IN2020 RAW: RCG update timeout offset=%#x\n",cmd);return false;
++}
++static bool mipi_state(bool on) {
++    uint8_t lo=0,hi=0,en=0,status=0,type=0;
++    return in2020_camera_pmic_read(0x148,4,&type) && type==4 &&
++        in2020_camera_pmic_read(0x148,0x40,&lo) && in2020_camera_pmic_read(0x148,0x41,&hi) &&
++        (lo|(hi<<8))==1200 && in2020_camera_pmic_read(0x148,0x46,&en) && !!(en&0x80)==on &&
++        in2020_camera_pmic_read(0x148,8,&status) && (!on || (status&0xa0)==0x80);
++}
++bool cr_mclk(bool on) {
++    if(!on) {
++        if(!mclk_owned)return true;
++        bool ok=cr_put(cc,0x506c,cr_read(cc,0x506c)&~1u,1) && cr_wait(cc,0x506c,1u<<31,1u<<31,2000);
++        ok=cr_put(cc,0x5058,mclk_cfg,0x371f)&&ok;ok=update(0x5054)&&ok;
++        if(ok)mclk_owned=false;return ok;
++    }
++    if(!cc)return false;
++    mclk_cfg=cr_read(cc,0x5058);mclk_branch=cr_read(cc,0x506c);
++    if(mclk_cfg==0xffffffff || mclk_branch==0xffffffff || (mclk_branch&1) || (cr_read(cc,0x5054)&1))return false;
++    mclk_owned=true;
++    return cr_put(cc,0x5058,(mclk_cfg&~0x371fu)|1u,0x371f) && update(0x5054) &&
++        cr_put(cc,0x506c,mclk_branch|1u,1) && cr_wait(cc,0x506c,1u<<31,0,2000);
++}
++bool cr_clocks_up(void) {
++    arc_owned=true;if(in2020_rpmh_camera_arc(true))return false;
++    gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
++    cc=ml_io_map(IN2020_CAMERA_CAMCC,IN2020_CAMERA_CAMCC_SIZE);refgen=ml_io_map(0x088e7000,0x1000);
++    if(!cc || !refgen)return false;
++    gdsc_old=cr_read(cc,0xc144);ref_old=cr_read(refgen,0x80);
++    printf("IN2020 RAW: GDSC=%#x REFGEN=%#x PLL0=%#x\n",gdsc_old,ref_old,cr_read(cc,0));
++    if(gdsc_old==0xffffffff || ref_old==0xffffffff)return false;
++    if(!(gdsc_old&(1u<<31))) {
++        if(!(gdsc_old&1))return false;gdsc_owned=true;
++        if(!cr_put(cc,0xc144,(gdsc_old|0x800u)&~1u,0x801) || !cr_wait(cc,0xc144,1u<<31,1u<<31,100000))return false;
++    }
++    if(!(ref_old&1)) {ref_owned=true;if(!cr_put(refgen,0x80,ref_old|1u,1))return false;delay(5);}
++    if(!mipi_state(true)) {
++        if(!mipi_state(false))return false;mipi_owned=true;
++        if(in2020_rpmh_camera_vrm("ldoa9",true))return false;
++        bool ready=false;for(unsigned n=0;n<50;++n) {if(mipi_state(true)) {ready=true;break;}delay_for_interval(1,NSEC_PER_MSEC);}
++        if(!ready)return false;
++    }
++    for(unsigned i=0;i<11;++i) {pll_old[i]=cr_read(cc,pll_regs[i]);if(pll_old[i]==0xffffffff)return false;}
++    if(pll_old[0]&1) {
++        if(cr_read(cc,4)!=0x3e || (cr_read(cc,0x40)&0xffff)!=0x8000 || !(cr_read(cc,0)&(1u<<31)))return false;
++    } else {
++        static const uint32_t setup[][2]={{4,0x3e},{8,0x44},{0x40,0x8000},{0x18,0x20485699},
++            {0x1c,0x2261},{0x20,0x329a699c},{0xc,0x3100},{0x10,0x805},{0x14,0}};
++        pll_owned=true;
++        for(unsigned i=0;i<9;++i)if(!cr_put(cc,setup[i][0],setup[i][1],~0u))return false;
++        if(!cr_put(cc,0,cr_read(cc,0)|(1u<<23),1u<<23) || !cr_put(cc,0x38,0,1) ||
++           !cr_put(cc,0,cr_read(cc,0)|4u,4) || !cr_put(cc,0x38,1,1) ||
++           !cr_wait(cc,0,1u<<31,1u<<31,2000) || !cr_put(cc,0xc,cr_read(cc,0xc)|7u,7) ||
++           !cr_put(cc,0,cr_read(cc,0)|1u,1))return false;
++    }
++    for(unsigned i=0;i<6;++i) {
++        struct clock_root *r=&roots[i];r->old=cr_read(cc,r->cmd+4);
++        if(r->old==0xffffffff || (cr_read(cc,r->cmd)&1))return false;
++        if((r->old&0x371f)==r->value)continue;
++        r->owned=true;if(!cr_put(cc,r->cmd+4,(r->old&~0x371fu)|r->value,0x371f) || !update(r->cmd))return false;
++    }
++    for(unsigned i=2;i<sizeof(branches)/sizeof(branches[0]);++i)if(!branch_on(i))return false;
++    printf("IN2020 RAW: kona camera clocks ready, PLL0=1200MHz IFE/CSID=400MHz PHYtimer=300MHz\n");return true;
++}
++bool cr_clocks_down(void) {
++    bool ok=cr_mclk(false);
++    if(cc && gdsc_owned) {
++        ok=cr_put(cc,0xc144,cr_read(cc,0xc144)|1u,1)&&ok;
++        ok=cr_wait(cc,0xc144,1u<<31,0,100000)&&ok;
++        if(ok)ok=cr_put(cc,0xc144,gdsc_old,0x801)&&ok;
++    }
++    if(ref_owned)ok=cr_put(refgen,0x80,ref_old,1)&&ok;
++    if(mipi_owned) {
++        if(in2020_rpmh_camera_vrm("ldoa9",false))ok=false;
++        delay_for_interval(2,NSEC_PER_MSEC);ok=mipi_state(false)&&ok;
++    }
++    if(cc) {
++        for(int i=(int)(sizeof(branches)/sizeof(branches[0]))-1;i>=2;--i)if(branches[i].owned) {
++            vm_offset_t p=branches[i].gcc?gcc:cc;
++            ok=cr_put(p,branches[i].offset,branches[i].old,1)&&ok;
++        }
++        for(int i=5;i>=0;--i)if(roots[i].owned) {
++            ok=cr_put(cc,roots[i].cmd+4,roots[i].old,0x371f)&&ok;ok=update(roots[i].cmd)&&ok;
++        }
++        if(pll_owned) {
++            cr_write(cc,0,cr_read(cc,0)&~1u);cr_write(cc,0xc,cr_read(cc,0xc)&~7u);cr_write(cc,0x38,0);
++            cr_write(cc,0,cr_read(cc,0)&~4u);
++            for(unsigned i=1;i<11;++i)cr_write(cc,pll_regs[i],pll_old[i]);
++            cr_write(cc,0,pll_old[0]&~(1u<<31));
++        }
++    }
++    if(arc_owned && in2020_rpmh_camera_arc(false))ok=false;
++    for(int i=1;i>=0;--i)if(branches[i].owned)ok=cr_put(gcc,branches[i].offset,branches[i].old,1)&&ok;
++    printf("IN2020 RAW: clock/core/refgen cleanup=%d\n",ok);return ok;
++}
+--- /dev/null
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -0,0 +1,165 @@
++/* Native camera SMMUv500 mapping. No active context/stream takeover.
++ * Fault mask follows pinned arm-smmu-regs.h; reserved FSR bits are preserved.
++ * One-shot buffers remain wired even after cleanup, never reused while uncertain.
++ */
++#include <vm/vm_kern.h>
++#include <pexpert/pexpert.h>
++#include "in2020_camera_raw.h"
++#include "in2020_camera_plan.h"
++extern uint64_t kvtophys(vm_offset_t);
++#define CAMERA_SID 0x800u
++#define CAMERA_MASK 0x441u /* exactly the eight FDT IFE SIDs */
++#define ALLOC_BYTES ((CR_BYTES+8192u+16383u)&~16383u)
++_Static_assert(ALLOC_BYTES<=3u*512u*4096u,"three 4K leaf tables bound");
++static vm_offset_t smmu,cb,gr1,buffer,tables;
++static unsigned match,context;
++static uint32_t old_smr,old_s2cr,old_cbar,old_cba2r;
++static const unsigned regs[]={0,0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
++static uint32_t saved[9],global_before[4];
++static const unsigned global_regs[4]={0x48,0x50,0x54,0x58};
++static bool published,quarantined;
++static uint32_t rd(vm_offset_t p,unsigned off) {
++    uint32_t v=*(volatile uint32_t *)(p+off);
++    __asm__ volatile("dmb oshld" ::: "memory");return v;
++}
++static void wr(vm_offset_t p,unsigned off,uint32_t v) {
++    __asm__ volatile("dmb oshst" ::: "memory");
++    *(volatile uint32_t *)(p+off)=v;__asm__ volatile("dsb osh" ::: "memory");
++}
++static bool sync_reg(vm_offset_t p,unsigned off,uint32_t v) {
++    wr(p,off,v);uint32_t got=rd(p,off);
++    if(got!=v)printf("IN2020 RAW DMA: write block=%s offset=%#x want=%#x got=%#x\n",p==cb?"CB":p==gr1?"GR1":"GR0",off,v,got);
++    return got==v;
++}
++static bool tlb(void) {
++    wr(cb,0x610,context+1);wr(cb,0x7f0,1);
++    for(unsigned i=0;i<100;++i) {
++        if(!(rd(cb,0x7f4)&1))return true;
++        delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    return false;
++}
++/* Global fault latches belong to all streams and may predate this driver.
++ * Preserve them; never clear firmware evidence or another device's faults.
++ * Our new context must start fault-free. Any global snapshot change stops DMA.
++ */
++static bool global_unchanged(void) {
++    for(unsigned i=0;i<4;++i) {
++        uint32_t value=rd(smmu,global_regs[i]);
++        if(value==0xffffffff || value!=global_before[i]) {
++            printf("IN2020 RAW DMA: global fault state changed reg=%#x before=%#x now=%#x\n",
++                global_regs[i],global_before[i],value);return false;
++        }
++    }
++    return true;
++}
++bool cr_dma_up(void) {
++    smmu=ml_io_map(0x15000000,0x100000);
++    if(!smmu)return false;
++    uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
++    for(unsigned i=0;i<4;++i)global_before[i]=rd(smmu,global_regs[i]);
++    printf("IN2020 RAW DMA: inherited GFSR=%#x SYNR=%#x/%#x/%#x; preserved\n",
++        global_before[0],global_before[1],global_before[2],global_before[3]);
++    unsigned matches=id0&255,contexts=id1&255,stage2=(id1>>16)&255;
++    unsigned page=(id1>>31)?0x10000:0x1000,pages=2u<<((id1>>28)&7);
++    printf("IN2020 RAW DMA: SMMU scr=%#x id0=%#x id1=%#x SMRs=%u CBs=%u S2CBs=%u\n",scr,id0,id1,matches,contexts,stage2);
++    if(scr==0xffffffff || id0==0xffffffff || id1==0xffffffff || (scr&8) ||
++       !matches || matches>128 || !contexts || contexts>128 || stage2>=contexts ||
++       2u*page*pages!=0x100000 || contexts>pages || !global_unchanged()) {
++        printf("IN2020 RAW DMA: geometry/access gate rejected\n");return false;
++    }
++    delay_for_interval(1,NSEC_PER_MSEC);if(!global_unchanged())return false;
++    bool used[128]={false};match=~0u;context=~0u;
++    for(unsigned i=0;i<matches;++i) {
++        uint32_t s=rd(smmu,0x800+4*i),c=rd(smmu,0xc00+4*i);
++        if(s==0xffffffff || c==0xffffffff) {printf("IN2020 RAW DMA: inaccessible SMR/S2CR index=%u\n",i);return false;}
++        if(s>>31) {
++            if((c&255)<contexts)used[c&255]=true;
++            if(((s^CAMERA_SID)&(~((s>>16)|CAMERA_MASK)&0x7fff))==0) {
++                printf("IN2020 RAW DMA: camera SID range covered by existing SMR%u=%#x S2CR=%#x; untouched\n",i,s,c);
++                return false;
++            }
++        } else if(match==~0u) {match=i;old_smr=s;old_s2cr=c;}
++    }
++    if(match==~0u) {printf("IN2020 RAW DMA: no invalid SMR available; existing entries untouched\n");return false;}
++    printf("IN2020 RAW DMA: free SMR=%u; scanning %u context banks\n",match,contexts-stage2);
++    for(unsigned i=stage2;i<contexts;++i) {
++        if(used[i])continue;
++        vm_offset_t p=smmu+(pages+i)*page;
++        uint32_t ctl=rd(p,0),fault=rd(p,0x58);
++        if(cp_context(false,ctl,fault,rd(p,0x7f4))) {
++            context=i;cb=p;break;
++        }
++    }
++    if(context==~0u) {printf("IN2020 RAW DMA: no readable unreferenced disabled CB\n");return false;}
++    gr1=smmu+page;old_cbar=rd(gr1,4*context);old_cba2r=rd(gr1,0x800+4*context);
++    if(old_cbar==0xffffffff || old_cba2r==0xffffffff) {printf("IN2020 RAW DMA: GR1 inaccessible CB=%u\n",context);return false;}
++    for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i) {
++        saved[i]=rd(cb,regs[i]);if(saved[i]==0xffffffff) {printf("IN2020 RAW DMA: CB=%u reg=%#x inaccessible\n",context,regs[i]);return false;}
++    }
++    unsigned audio=0;(void)PE_parse_boot_argn("in2020adsp",&audio,sizeof(audio));
++    if(audio) {printf("IN2020 RAW DMA: concurrent audio not supported\n");return false;}
++    if(kmem_alloc(kernel_map,&buffer,ALLOC_BYTES,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    memset((void *)buffer,0xa5,ALLOC_BYTES);
++    if(kmem_alloc(kernel_map,&tables,32768,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    uint64_t *root=(uint64_t *)tables,*second=(uint64_t *)(tables+4096);
++    uint64_t root_pa=kvtophys(tables);
++    if((root_pa&0xfff) || root_pa>>36) {printf("IN2020 RAW DMA: root PA out of bounds\n");return false;}
++    root[1]=kvtophys(tables+4096)|3;
++    for(unsigned j=0;j<3;++j)second[j]=kvtophys(tables+8192+j*4096)|3;
++    for(unsigned i=0;i<ALLOC_BYTES/4096;++i) {
++        uint64_t pa=kvtophys(buffer+i*4096);
++        if((pa&0xfff) || pa>>36) {printf("IN2020 RAW DMA: buffer page=%u PA out of bounds\n",i);return false;}
++        uint64_t *third=(uint64_t *)(tables+8192+(i/512)*4096);third[i%512]=pa|0xe43ull;
++    }
++    for(vm_offset_t p=tables;p<tables+32768;p+=64)__asm__ volatile("dc cvac,%0"::"r"(p):"memory");
++    for(vm_offset_t p=buffer;p<buffer+ALLOC_BYTES;p+=64)__asm__ volatile("dc cvac,%0"::"r"(p):"memory");
++    __asm__ volatile("dsb sy" ::: "memory");
++    printf("IN2020 RAW DMA: new SMR=%u CB=%u IOVA=%#x bytes=%u; table PA=%#llx\n",match,context,CR_IOVA,ALLOC_BYTES,root_pa);
++    /* After the first write, any failed verification retains memory until reset. */
++    if(!global_unchanged() || rd(smmu,0x800+4*match)!=old_smr ||
++       rd(smmu,0xc00+4*match)!=old_s2cr)return false;
++    for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i)
++        if(rd(cb,regs[i])!=saved[i])return false;
++    quarantined=true;
++    bool ok=sync_reg(cb,0,0) && sync_reg(gr1,0x800+4*context,1) && sync_reg(gr1,4*context,0x1f300) &&
++        sync_reg(cb,0x10,0x38011) && sync_reg(cb,0x30,0x803519) &&
++        sync_reg(cb,0x20,(uint32_t)root_pa) &&
++        sync_reg(cb,0x24,(uint32_t)(root_pa>>32)|((context+1)<<16)) &&
++        sync_reg(cb,0x28,0) && sync_reg(cb,0x2c,0) &&
++        sync_reg(cb,0x38,0xf404ff44) && sync_reg(cb,0x3c,0) && tlb() &&
++        sync_reg(cb,0,0x1127) && sync_reg(smmu,0xc00+4*match,context) &&
++        sync_reg(smmu,0x800+4*match,0x80000000u|(CAMERA_MASK<<16)|CAMERA_SID);
++    published=ok;
++    return ok;
++}
++static bool memory_off(void) {
++    if(!published)return false;
++    bool ok=sync_reg(smmu,0x800+4*match,old_smr) && sync_reg(cb,0,0) && tlb();
++    if(!ok)return false;
++    for(unsigned i=1;i<sizeof(regs)/sizeof(regs[0]);++i)ok=sync_reg(cb,regs[i],saved[i])&&ok;
++    ok=sync_reg(gr1,4*context,old_cbar)&&ok;
++    ok=sync_reg(gr1,0x800+4*context,old_cba2r)&&ok;
++    ok=sync_reg(smmu,0xc00+4*match,old_s2cr)&&ok;
++    ok=sync_reg(cb,0,saved[0])&&ok;
++    if(ok) {published=false;quarantined=false;}
++    return ok;
++}
++
++uint8_t *cr_dma_data(void) {return (uint8_t *)(buffer+4096);}
++void cr_dma_invalidate(void) {
++    __asm__ volatile("dsb sy":::"memory");
++    for(vm_offset_t p=buffer;p<buffer+ALLOC_BYTES;p+=64)__asm__ volatile("dc ivac,%0"::"r"(p):"memory");
++    __asm__ volatile("dsb sy":::"memory");
++}
++bool cr_dma_ok(void) {
++    if(!published || (rd(cb,0x58)&CR_FSR_FAULT) || !global_unchanged())return false;
++    const uint8_t *p=(const uint8_t *)buffer;
++    for(unsigned i=0;i<4096;++i)if(p[i]!=0xa5)return false;
++    for(unsigned i=4096+CR_BYTES;i<ALLOC_BYTES;++i)if(p[i]!=0xa5)return false;
++    return true;
++}
++void cr_dma_down(bool stopped) {
++    if(!stopped || !published) {printf("IN2020 RAW DMA: mapping retained quarantine=%d\n",quarantined);return;}
++    printf("IN2020 RAW DMA: restored=%d; buffers remain wired\n",memory_off());
++}
+--- /dev/null
++++ b/bsd/dev/in2020_camera_plan.h
+@@ -0,0 +1,36 @@
++/* Fixed front RAW plan parser; no MMIO. Vendor table bytes stay local. */
++#ifndef IN2020_CAMERA_PLAN_H
++#define IN2020_CAMERA_PLAN_H
++#include <stdint.h>
++#include <stddef.h>
++#include <stdbool.h>
++static inline uint32_t cp32(const uint8_t *p) {return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
++static inline unsigned cp16(const uint8_t *p) {return p[0]|((unsigned)p[1]<<8);}
++static inline uint32_t cp_crc(const uint8_t *p,size_t n) {
++    uint32_t c=~0u;for(size_t i=0;i<n;++i) {c^=p[i];for(unsigned b=0;b<8;++b)c=(c>>1)^(0xedb88320u&-(c&1u));}return ~c;
++}
++static inline unsigned cp_value(const uint8_t *p,unsigned n,unsigned reg) {
++    unsigned value=256;for(unsigned i=0;i<n;++i)if(cp16(p+i*8)==reg)value=p[i*8+2];return value;
++}
++static inline bool cp_plan(const uint8_t *p,size_t bytes) {
++    static const uint32_t fields[13]={1,155,57,212,0x471,0x10,4,0x3210,14,2328,1748,0,0};
++    static const uint16_t regs[11]={0x112,0x113,0x114,0x34c,0x34d,0x34e,0x34f,0x342,0x343,0x340,0x341};
++    static const uint8_t values[11]={10,10,3,9,24,6,212,10,0,10,125};
++    static const uint8_t magic[8]={'I','2','0','R','A','W','0','1'};
++    if(!p || bytes!=64+212*8)return false;
++    for(unsigned i=0;i<8;++i)if(p[i]!=magic[i])return false;
++    for(unsigned i=0;i<13;++i)if(cp32(p+8+i*4)!=fields[i])return false;
++    if(cp32(p+60)!=cp_crc(p+64,212*8))return false;
++    for(unsigned i=0;i<212;++i) {
++        const uint8_t *r=p+64+i*8;unsigned a=cp16(r);
++        if(r[3] || a==0x100 || (a>=0xa00 && a<=0xaff) || cp32(r+4)>10000)return false;
++    }
++    if(cp_value(p+64,155,0x136)!=0x13 || cp_value(p+64,155,0x137)!=0x33)return false;
++    for(unsigned i=0;i<11;++i)if(cp_value(p+64+155*8,57,regs[i])!=values[i])return false;
++    return true;
++}
++static inline bool cp_context(bool referenced,uint32_t control,uint32_t fault,uint32_t tlb) {
++    return !referenced && !(control&1u) && !(control&~0x11f7u) &&
++        !(fault&0xc00001feu) && !(tlb&1u);
++}
++#endif
+--- /dev/null
++++ b/bsd/dev/in2020_camera_raw.h
+@@ -0,0 +1,46 @@
++/* IN2020 bounded, one-frame native RAW10 capture. APSL 2.0. */
++#ifndef IN2020_CAMERA_RAW_H
++#define IN2020_CAMERA_RAW_H
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++#include "in2020_camera_board.h"
++#define CR_WIDTH 2328u
++#define CR_HEIGHT 1748u
++#define CR_STRIDE 2912u
++#define CR_BYTES (CR_STRIDE*CR_HEIGHT)
++#define CR_IOVA 0x40000000u
++#define CR_FSR_FAULT 0xc00001feu
++extern vm_offset_t ml_io_map(vm_offset_t,vm_size_t);
++static inline uint32_t cr_read(vm_offset_t p,unsigned o) {
++    uint32_t v=*(volatile uint32_t *)(p+o);__asm__ volatile("dmb oshld":::"memory");return v;
++}
++static inline void cr_write(vm_offset_t p,unsigned o,uint32_t v) {
++    __asm__ volatile("dmb oshst":::"memory");*(volatile uint32_t *)(p+o)=v;__asm__ volatile("dsb osh":::"memory");
++}
++static inline bool cr_put(vm_offset_t p,unsigned o,uint32_t v,uint32_t mask) {
++    cr_write(p,o,v);uint32_t got=cr_read(p,o);
++    if((got&mask)!=(v&mask)) {printf("IN2020 RAW: write offset=%#x wanted=%#x got=%#x mask=%#x\n",o,v,got,mask);return false;}return true;
++}
++static inline bool cr_wait(vm_offset_t p,unsigned o,uint32_t mask,uint32_t want,unsigned us) {
++    for(unsigned n=0;n<us;n+=10) {if((cr_read(p,o)&mask)==want)return true;delay(10);}return false;
++}
++bool in2020_camera_pmic_read(unsigned,unsigned,uint8_t *);
++int in2020_rpmh_camera_vrm(const char *,bool);
++int in2020_rpmh_camera_arc(bool);
++bool cr_sensor_plan_valid(void);
++bool cr_sensor_up(void);
++bool cr_sensor_program(void);
++bool cr_sensor_stream(bool);
++bool cr_sensor_down(void);
++bool cr_clocks_up(void);
++bool cr_clocks_down(void);
++bool cr_mclk(bool);
++bool cr_dma_up(void);
++bool cr_dma_ok(void);
++void cr_dma_down(bool);
++uint8_t *cr_dma_data(void);
++void cr_dma_invalidate(void);
++void in2020_camera_capture(void);
++#endif
+--- /dev/null
++++ b/bsd/dev/in2020_camera_sensor.c
+@@ -0,0 +1,136 @@
++/* Native IMX471 power/CCI. No EEPROM, OIS, OTP or calibration writes. APSL2. */
++#include <pexpert/device_tree.h>
++#include "in2020_camera_raw.h"
++#include "in2020_camera_plan.h"
++static vm_offset_t pins[5];
++static uint32_t cfg[5],latch[5];
++static bool saved,rail_vote[2],reset_taken,power_taken;
++static const char *const rails[2]={"ldof7","ldof3"};
++static const unsigned ppids[2]={0xb46,0xb42},millivolts[2]={1800,1056};
++static const uint8_t *plan;
++bool cr_sensor_plan_valid(void);
++bool cr_sensor_plan_valid(void) {
++    DTEntry n;const void *p=NULL;unsigned length=0;
++    if(SecureDTLookupEntry(NULL,"/in2020-camera",&n)!=kSuccess ||
++       SecureDTGetProperty(n,"front-plan",&p,&length)!=kSuccess || !cp_plan(p,length))return false;
++    plan=p;return true;
++}
++static bool pmic(unsigned ppid,unsigned offset,uint8_t *v) {return in2020_camera_pmic_read(ppid,offset,v);}
++static bool rail_state(unsigned i,bool on) {
++    uint8_t lo=0,hi=0,en=0,status=0,type=0,sub=0;
++    if(!pmic(ppids[i],4,&type) || !pmic(ppids[i],5,&sub) || type!=4 ||
++       sub!=(i?0x6a:0x73) || !pmic(ppids[i],0x40,&lo) || !pmic(ppids[i],0x41,&hi) ||
++       (unsigned)(lo|(hi<<8))!=millivolts[i] || !pmic(ppids[i],0x46,&en) ||
++       !pmic(ppids[i],8,&status))return false;
++    return !!(en&0x80)==on && (!on || (status&0xa0)==0x80);
++}
++static bool bob_ready(void) {
++    uint8_t type=0,sub=0,en=0,status=0,lo=0,hi=0;
++    return pmic(0x5a0,4,&type) && type==0x29 && pmic(0x5a0,5,&sub) && sub==5 &&
++        pmic(0x5a0,0x46,&en) && (en&0x80) && pmic(0x5a0,8,&status) && (status&0x80) &&
++        pmic(0x5a0,0x40,&lo) && pmic(0x5a0,0x41,&hi) &&
++        (lo|(hi<<8))>=3008 && (lo|(hi<<8))<=3960;
++}
++static bool gpio(unsigned i,uint32_t configuration,bool high) {
++    uint32_t io=cr_read(pins[i],4);cr_write(pins[i],4,(io&~2u)|(high?2u:0));
++    return cr_put(pins[i],0,(cfg[i]&~0x3ffu)|configuration,0x3ff) && !!(cr_read(pins[i],4)&2u)==high;
++}
++bool cr_sensor_up(void) {
++    if(!plan || !bob_ready() || !rail_state(0,false) || !rail_state(1,false))return false;
++    for(unsigned i=0;i<5;++i) {
++        pins[i]=ml_io_map(in2020_camera_pins[i].base,0x1000);if(!pins[i])return false;
++        cfg[i]=cr_read(pins[i],0);latch[i]=cr_read(pins[i],4)&2;
++        if(cfg[i]!=1 || latch[i])return false;
++    }
++    saved=true;reset_taken=true;
++    if(!gpio(1,0x200,false) || !gpio(2,0x200,false))return false;
++    for(unsigned i=0;i<2;++i) {
++        rail_vote[i]=true;
++        if(in2020_rpmh_camera_vrm(rails[i],true))return false;
++        bool ready=false;
++        for(unsigned n=0;n<50;++n) {if(rail_state(i,true)) {ready=true;break;}delay_for_interval(1,NSEC_PER_MSEC);}
++        if(!ready)return false;
++        delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    if(!gpio(2,0x3c3,true))return false;power_taken=true;
++    delay_for_interval(1,NSEC_PER_MSEC);
++    if(!cr_mclk(true) || !gpio(0,4,false))return false;
++    delay_for_interval(1,NSEC_PER_MSEC);
++    if(!gpio(1,0x200,true))return false;
++    delay_for_interval(10,NSEC_PER_MSEC);
++    for(unsigned i=3;i<5;++i)if(!gpio(i,3,false))return false;
++    return true;
++}
++static bool line(unsigned i,bool high) {
++    return gpio(i,high?3:0x203,false);
++}
++static bool clock_high(void) {
++    if(!line(4,true))return false;
++    for(unsigned n=0;n<1000;++n) {if(cr_read(pins[4],4)&1)return true;delay(1);}return false;
++}
++static bool start(void) {
++    if(!line(3,true) || !clock_high())return false;delay(6);
++    if(!line(3,false))return false;delay(6);return line(4,false);
++}
++static bool stop(void) {
++    bool ok=line(3,false);delay(6);ok=clock_high()&&ok;delay(6);ok=line(3,true)&&ok;delay(6);return ok;
++}
++static bool bit(bool out,bool *in) {
++    if(!line(3,out))return false;delay(6);
++    if(!clock_high())return false;delay(6);*in=!!(cr_read(pins[3],4)&1);return line(4,false);
++}
++static bool write_byte(uint8_t v) {
++    bool b;for(int i=7;i>=0;--i)if(!bit(!!(v&(1u<<i)),&b))return false;
++    return bit(true,&b) && !b;
++}
++static bool read_byte(uint8_t *v,bool more) {
++    bool b;*v=0;
++    for(unsigned i=0;i<8;++i) {if(!bit(true,&b))return false;*v=(uint8_t)((*v<<1)|b);}
++    return bit(!more,&b);
++}
++static bool transfer(unsigned reg,const uint8_t *v,unsigned n,uint8_t *in,unsigned count) {
++    bool ok=start() && write_byte(0x20) && write_byte((uint8_t)(reg>>8)) && write_byte((uint8_t)reg);
++    for(unsigned i=0;ok && i<n;++i)ok=write_byte(v[i]);
++    if(ok && count) {
++        ok=start() && write_byte(0x21);
++        for(unsigned i=0;ok && i<count;++i)ok=read_byte(in+i,i+1<count);
++    }
++    return stop() && ok;
++}
++bool cr_sensor_program(void) {
++    uint8_t id[2]={0};bool matched=false;
++    for(unsigned n=0;n<20;++n) {
++        if(transfer(0x16,NULL,0,id,2) && id[0]==4 && id[1]==0x71) {matched=true;break;}
++        delay_for_interval(2,NSEC_PER_MSEC);
++    }
++    printf("IN2020 RAW: native IMX471 ID=%#x matched=%d\n",(id[0]<<8)|id[1],matched);
++    if(!matched)return false;
++    for(unsigned i=0;i<212;++i) {
++        const uint8_t *r=plan+64+i*8;
++        if(!transfer(cp16(r),r+2,1,NULL,0)) {printf("IN2020 RAW: sensor table failed row=%u addr=%#x\n",i,cp16(r));return false;}
++        if(cp32(r+4))delay(cp32(r+4));
++    }
++    /* Independently read back output geometry/format before enabling CSI DMA. */
++    const unsigned regs[3]={0x112,0x34c,0x34e},wanted[3]={0x0a0a,2328,1748};
++    for(unsigned i=0;i<3;++i)if(!transfer(regs[i],NULL,0,id,2) || ((id[0]<<8)|id[1])!=wanted[i])return false;
++    return true;
++}
++bool cr_sensor_stream(bool on) {uint8_t v=on?1:0;return reset_taken && transfer(0x100,&v,1,NULL,0);}
++bool cr_sensor_down(void) {
++    bool ok=true;
++    if(reset_taken)ok=gpio(1,0x200,false)&&ok;
++    ok=cr_mclk(false)&&ok;
++    if(power_taken || reset_taken)ok=gpio(2,0x200,false)&&ok;
++    for(int i=1;i>=0;--i)if(rail_vote[i]) {
++        if(in2020_rpmh_camera_vrm(rails[i],false))ok=false;
++        bool off=false;
++        for(unsigned n=0;n<50;++n) {if(rail_state((unsigned)i,false)) {off=true;break;}delay_for_interval(1,NSEC_PER_MSEC);}
++        ok=off&&ok;
++    }
++    if(saved && ok)for(unsigned i=0;i<5;++i) {
++        cr_write(pins[i],0,cfg[i]&~(0x3cu|0x200u));
++        cr_write(pins[i],4,(cr_read(pins[i],4)&~2u)|latch[i]);cr_write(pins[i],0,cfg[i]);
++        ok=cr_read(pins[i],0)==cfg[i] && (cr_read(pins[i],4)&2u)==latch[i] && ok;
++    }
++    printf("IN2020 RAW: sensor power-down and pin restore=%d BOB-preserved=%d\n",ok,bob_ready());return ok;
++}
+--- a/bsd/dev/in2020_rpmh.c
++++ b/bsd/dev/in2020_rpmh.c
+@@ -394,4 +394,37 @@
+ 	__atomic_store_n(&rh_lock, 0, __ATOMIC_RELEASE);
+ 	return error;
+ }
++/* Camera RAW uses enable-only votes; its caller verifies physical VSET first. */
++int in2020_rpmh_camera_vrm(const char *,bool);
++int in2020_rpmh_camera_arc(bool);
++int in2020_rpmh_camera_vrm(const char *name,bool on) {
++    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
++    for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
++        if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    int error=EIO;uint32_t address=0;
++    if(!rh_poisoned && !(error=rh_map()) && !(error=rh_lookup(name,&address))) {
++        address+=4;const uint32_t value=on?1:0;
++        error=rh_transfer(&address,&value,1);
++        printf("IN2020 CAMERA RPMH: %s enable=%u result=%d\n",name,value,error);
++    }
++    __atomic_store_n(&rh_lock,0,__ATOMIC_RELEASE);return error;
++}
++int in2020_rpmh_camera_arc(bool on) {
++    for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
++        if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    int error=EIO;
++    if(!rh_poisoned && !(error=rh_map())) {
++        struct in2020_arc_vote votes[3];
++        if(!in2020_arc_camera((const volatile uint8_t *)rh_db,rh_db_size,on?384:0,votes))error=EINVAL;
++        else {
++            const uint32_t addresses[3]={votes[0].address,votes[1].address,votes[2].address};
++            const uint32_t values[3]={votes[0].value,votes[1].value,votes[2].value};
++            error=rh_transfer(addresses,values,3);
++            printf("IN2020 CAMERA RPMH: core on=%d result=%d\n",on,error);
++        }
++    }
++    __atomic_store_n(&rh_lock,0,__ATOMIC_RELEASE);return error;
++}
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+--- a/bsd/dev/in2020_arc.h
++++ b/bsd/dev/in2020_arc.h
+@@ -45,4 +45,40 @@
+     if(matches[0]!=1 || matches[1]!=1 || found[0].address==found[1].address) return false;
+     out[0]=found[0];out[1]=found[1];return true;
+ }
++/* Camera core domains: the three fixed FDT resources, exact level384/0. */
++static inline bool in2020_arc_camera(const volatile uint8_t *db,uint32_t size,
++    uint32_t level,struct in2020_arc_vote out[3])
++{
++    static const char ids[3][8]={"cx.lvl","mx.lvl","mmcx.lvl"};
++    struct in2020_arc_vote found[3]={{0}};unsigned matches[3]={0};
++    if(!db || !out || size<144 || size>0x100000 || (level!=0 && level!=384)) return false;
++    if(arc32(db)!=1 || arc32(db+4)!=0x0c0330db || (arc32(db+140)&1)) return false;
++    for(unsigned s=0;s<8;++s) {
++        unsigned h=8+s*16;if(arc16(db+h)!=3) continue;
++        uint32_t entries=144+arc16(db+h+2),aux=144+arc16(db+h+4),count=arc16(db+h+6);
++        if((entries&3) || !arc_range(entries,count*24,size) || !arc_range(aux,0,size)) return false;
++        for(unsigned i=0;i<count;++i) {
++            uint32_t e=entries+i*24;
++            for(unsigned r=0;r<3;++r) {
++                bool equal=true;for(unsigned c=0;c<8;++c) equal&=db[e+c]==(uint8_t)ids[r][c];
++                if(!equal) continue;
++                if(++matches[r]!=1) return false;
++                uint32_t address=arc32(db+e+16),n=arc16(db+e+20),at=aux+arc16(db+e+22);
++                if((address>>16)!=3 || (address&3) || n<2 || n>32 || (n&1) || !arc_range(at,n,size)) return false;
++                if(arc16(db+at)!=0) return false;
++                bool selected=false;uint32_t previous=0;
++                for(unsigned k=0;k<n/2;++k) {
++                    uint32_t value=arc16(db+at+k*2);
++                    if(k && !value) break;
++                    if(k && value<=previous) return false;
++                    previous=value;
++                    if(value==level) { found[r]=(struct in2020_arc_vote){address,k};selected=true; }
++                }
++                if(!selected) return false;
++            }
++        }
++    }
++    if(matches[0]!=1 || matches[1]!=1 || matches[2]!=1 || found[0].address==found[1].address || found[0].address==found[2].address || found[1].address==found[2].address) return false;
++    out[0]=found[0];out[1]=found[1];out[2]=found[2];return true;
++}
+ #endif
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -122,6 +122,10 @@
+ bsd/dev/in2020_speaker.c		standard
+ bsd/dev/in2020_audio_user.c		standard
+ bsd/dev/in2020_camera.c		standard
++bsd/dev/in2020_camera_sensor.c		standard
++bsd/dev/in2020_camera_clocks.c		standard
++bsd/dev/in2020_camera_dma.c		standard
++bsd/dev/in2020_camera_capture.c		standard
+ bsd/dev/mem.c				standard
+ bsd/dev/munge.c 			optional config_requires_u32_munging
+ bsd/dev/unix_startup.c			standard

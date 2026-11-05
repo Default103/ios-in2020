@@ -394,4 +394,37 @@ out:
 	__atomic_store_n(&rh_lock, 0, __ATOMIC_RELEASE);
 	return error;
 }
+/* Camera RAW uses enable-only votes; its caller verifies physical VSET first. */
+int in2020_rpmh_camera_vrm(const char *,bool);
+int in2020_rpmh_camera_arc(bool);
+int in2020_rpmh_camera_vrm(const char *name,bool on) {
+    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
+    for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
+        if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
+    }
+    int error=EIO;uint32_t address=0;
+    if(!rh_poisoned && !(error=rh_map()) && !(error=rh_lookup(name,&address))) {
+        address+=4;const uint32_t value=on?1:0;
+        error=rh_transfer(&address,&value,1);
+        printf("IN2020 CAMERA RPMH: %s enable=%u result=%d\n",name,value,error);
+    }
+    __atomic_store_n(&rh_lock,0,__ATOMIC_RELEASE);return error;
+}
+int in2020_rpmh_camera_arc(bool on) {
+    for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
+        if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
+    }
+    int error=EIO;
+    if(!rh_poisoned && !(error=rh_map())) {
+        struct in2020_arc_vote votes[3];
+        if(!in2020_arc_camera((const volatile uint8_t *)rh_db,rh_db_size,on?384:0,votes))error=EINVAL;
+        else {
+            const uint32_t addresses[3]={votes[0].address,votes[1].address,votes[2].address};
+            const uint32_t values[3]={votes[0].value,votes[1].value,votes[2].value};
+            error=rh_transfer(addresses,values,3);
+            printf("IN2020 CAMERA RPMH: core on=%d result=%d\n",on,error);
+        }
+    }
+    __atomic_store_n(&rh_lock,0,__ATOMIC_RELEASE);return error;
+}
 #endif /* ARM64_BOARD_CONFIG_SWEET */

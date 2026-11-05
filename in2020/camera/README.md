@@ -47,3 +47,19 @@ values. It retains 155 init and 57 mode records, rejects stream-control/OTP
 registers and unsupported widths/operations/delays. No stream-on is included
 and the tool performs no hardware I/O. Its output remains private and has not
 been executed on the sensor. Synthetic gate tests run in host CI.
+
+
+Stage 2 (`in2020cam=2`) integrates native front-camera power, MCLK3,
+bounded CCI configuration, CSI480/IFE-lite Bus v3 and one SMMU-backed frame.
+It exports full 2328x1748 MIPI RAW10 (2912-byte stride) to a unique
+`/private/var/tmp/in2020-front-raw10-<machtime>.bin`. The 64-byte little-endian
+I20FRAME header includes geometry, CRC32 and capture time. Export requires
+fresh DMA completion, intact guards, changed payload, clean shutdown and
+stable CRC. There is no test-pattern source. Buffers remain wired, and
+uncertain cleanup retains the isolated mapping until reboot.
+
+Build with `tools/build-in2020-camera-raw.py` and a kernel containing patch
+0132. Private sensor/PHY data is inserted locally into ADT, never committed.
+Host checks and cross-compilation pass; actual native frame capture remains
+unverified. Earlier stage-1-only next steps above are superseded by this
+integrated capture at the user's request.
