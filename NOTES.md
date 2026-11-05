@@ -1,3 +1,11 @@
+## 2026-11-06 NATIVE RAW1 BOOT ACCEPTED; await manual FB return
+
+USER boot/collect. Native42128688745 SUCCESS sourceb91f1c4dd983aeba38cc4b176127c47773094bd7; host42128692828hostSUCCESS. KernelSHA15dc8a1fff1f10a96da223beed7a2708d1bdfd4e85af62f51e4d53d34e198b9b matchesmanifest;0132/allnewcameraCverified/noFAILEDhunks. builds/xnu-42128688745/in2020-native-raw1 imageSHA118c8aec66925365051a00580137823292d04fd45bf58b0719226f02a9195713,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->fastbootbootOKAY0.516sec. boot-result.json saved. PHONE LEFT RUNNING RAW1. Asyncasked1-2min/manualFBreturn; no verified native remote return. Runtime/frame NOTverified.
+
+NEXT USERreturnFB: verifiedTWRPtemporaryboot then waitADB60-90sec/serverrefresh. Capture NEW logs/camera-native-raw1-20261106 via scripts/pull-in2020-perf-log.py with platform-tools PATH. Inspect IN2020 RAW stages/ID/DMA/result/export. Onlyifexporterror0/resid0 use tools/read-in2020-native-raw.py --adb PATH --serial SERIAL --path EXACT_LOG_PATH --out NEW_PRIVATE_PATH. Check nativeframeCRC; neverassumesuccessfromboot/IRQalone.
+
+Reader+syntheticcatalog/path/extents/bounds/frameCRC tests PASS, committed8fa9252. ACTUALphoneHFS4096block/8192node, /private/var/tmp resolved and0nativecapturefiles BEFOREboot. Read2472cached64Kchunks (~162MB), leafscan takesminutes. No mount/writes. Raw/private/logs staylocal. No kernelrebuildneededforreader. Notes write originallyfailedGBK beforethisentry; correctedexplicitUTF8.
+
 ## 2026-11-06 integrated XNU RAW implementation, not yet phone verified
 
 Supersedes earlier standalone-checkpoint proposal: in2020cam=2 now performs one finite native IMX471 power/MCLK/CCI + CSI480/IFE-lite Bus v3 + SMMU DMA capture. Full 2328x1748 RAW10, stride2912, payload5090176 bytes, 64-byte I20FRAME header, CRC32; unique /private/var/tmp/in2020-front-raw10-<machtime>.bin, synchronous HFS write. No Camera app, recovery/HAL backend or TPG. Requires fresh WM completion, changed sentinel, intact guards, no owned context fault, clean stop and stable CRC. Buffer stays wired; uncertain shutdown quarantines mapping. Existing shared BOB/refgen/GDSC/clocks snapshots preserved. Camera ARC uses locked TCS1 engine, only fixed cx/mx/mmcx level384 and enable-only ldof3/7 + ldoa9. Native success NOT claimed.
