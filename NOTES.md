@@ -1,3 +1,9 @@
+## 2026-11-05 CAMERA native preflight committed; bounded front-mode plan checked
+
+Camera source0355f07 pushed; host42117076254hostSUCCESS/QEMUstillpending(consoleonlypreviouskernel42109996047). No newfullkernelbuild/camera boot; speaker42113591117 leftaloneawaitUSERnotification.
+
+Additional tools/build-in2020-front-mode.py pins measured IMX471moduleSHAb2b80b9be31ede0209f63f00d2138b6900548fc6c5bd25b997c7f38d5972cba7, reusesboundedV2inspector thenextractsone155recordinit+57recordmode1. Independentregistergeometry0112/13=RAW10,0114=4lanes,034C/E2328x1748,0342line2560,0340frame2685 matchmetadata. 0136/37=13/33inputclock. Rejectunsupportedslaveoverride/buswidth/op/count/delay,0100streamcontroland0AxxOTP range; NOstreamon. Private hardware/speaker-camera-20261102/front-mode-2328x1748-20261105.json generated, NOTexecuted/nativeframesnotcaptured. Hostsyntheticgeometry/lane/bpp/timing/OTP/stream/bounds/unpinnedinputcasesPASS. Thisisverifiedcapture-planDATA,notproofI/Oorsensormodeexecution.
+
 ## 2026-11-05 USER switches active work to CAMERA; speaker build awaiting notification
 
 USER says continuecamera, willnotifywhen speakerbuilddone. DO NOT restart/cancel/boot speakerbuild42113591117/sourcef404478; host42113596167 pending/independent. PhoneLEFTTWRP fromR2capture. No deviceoperationsduringcamera sourceprep.

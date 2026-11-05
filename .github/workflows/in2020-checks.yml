@@ -42,6 +42,7 @@ jobs:
         run: |
           python3 tools/check-in2020-camera.py
           python3 in2020/camera/board_test.py
+          python3 in2020/camera/front_mode_test.py
       - name: Test fixed camera probe packet ABI
         run: |
           python3 in2020/sensor_v2_test.py

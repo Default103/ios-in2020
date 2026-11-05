@@ -39,3 +39,11 @@ Provenance: OnePlusOSS/android_kernel_oneplus_sm8250 commit
 probes. Relevant CCI/480 source files are pinned in local camera-reference/kona/
 isp480-manifest.json. HakiOS a3384e03 camera code was reviewed as a reference;
 its board constants and unsafe buffer lifetimes are not imported.
+
+`tools/build-in2020-front-mode.py` extracts only the pinned measured IMX471
+module into a local candidate plan. The mode's dimensions, line/frame timing,
+RAW10 format and four-lane setting are checked independently against register
+values. It retains 155 init and 57 mode records, rejects stream-control/OTP
+registers and unsupported widths/operations/delays. No stream-on is included
+and the tool performs no hardware I/O. Its output remains private and has not
+been executed on the sensor. Synthetic gate tests run in host CI.
