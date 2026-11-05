@@ -1,0 +1,79 @@
+--- a/bsd/dev/in2020_pcm.c
++++ b/bsd/dev/in2020_pcm.c
+@@ -1,7 +1,7 @@
+ /* IN2020 PCM transport: silent probe or continuous iOS speaker output.
+  * ABI references: pinned OnePlus audio 0ac91e89 (APR/ASM/ADM), OnePlus kernel
+  * 98719830 (SMMUv500), and HakiOS a3384e03 hakios.sound.c (transport layout).
+- * Only a new, unclaimed SMR and disabled/empty context may be used. Existing
++ * Only a new, unclaimed SMR and unreferenced disabled context may be used. Existing
+  * mappings are never taken over. Uncertain DSP cleanup quarantines all memory.
+  */
+ #include <sys/param.h>
+@@ -11,6 +11,7 @@
+ #include <vm/vm_kern.h>
+ #include "hakios.audio.h"
+ #include "in2020_pcm_event.h"
++#include "in2020_pcm_context.h"
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern uint64_t kvtophys(vm_offset_t);
+ extern bool in2020_tfa_confirm_off(void);
+@@ -99,12 +100,20 @@
+     }
+     if(match==~0u) {printf("IN2020 PCM: no invalid SMR available; existing entries untouched\n");return false;}
+     printf("IN2020 PCM: free SMR=%u; scanning %u context banks\n",match,contexts-stage2);
++    unsigned unreferenced=0,enabled=0,faulted=0,busy=0,inaccessible=0;
+     for(unsigned i=stage2;i<contexts;++i) {
++        if(used[i])continue;
+         vm_offset_t p=smmu+(pages+i)*page;
+-        if(!used[i] && rd(p,0)==0 && rd(p,0x20)==0 && rd(p,0x24)==0 &&
+-           rd(p,0x28)==0 && rd(p,0x2c)==0 && rd(p,0x58)==0) {context=i;cb=p;break;}
+-    }
+-    if(context==~0u) {printf("IN2020 PCM: no unclaimed empty context\n");return false;}
++        uint32_t control=rd(p,0),fault=rd(p,0x58),status=rd(p,0x7f4);
++        ++unreferenced;enabled+=!!(control&1u);faulted+=fault!=0;busy+=!!(status&1u);
++        inaccessible+=control==0xffffffff || fault==0xffffffff || status==0xffffffff;
++        if(unreferenced<=8)printf("IN2020 PCM: unreferenced CB=%u SCTLR=%#x FSR=%#x TLB=%#x\n",i,control,fault,status);
++        if(in2020_pcm_context_available(false,control,fault,status)) {context=i;cb=p;break;}
++    }
++    if(context==~0u) {
++        printf("IN2020 PCM: no available disabled context; unreferenced=%u enabled=%u faulted=%u busy=%u inaccessible=%u\n",
++            unreferenced,enabled,faulted,busy,inaccessible);return false;
++    }
+     gr1=smmu+page;old_cbar=rd(gr1,4*context);old_cba2r=rd(gr1,0x800+4*context);
+     if(old_cbar==0xffffffff || old_cba2r==0xffffffff) {printf("IN2020 PCM: GR1 inaccessible CB=%u\n",context);return false;}
+     for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i) {
+@@ -126,9 +135,14 @@
+     __asm__ volatile("dsb sy" ::: "memory");
+     printf("IN2020 PCM: new SMR=%u CB=%u IOVA=%#x bytes=%u; table PA=%#llx\n",match,context,AUDIO_IOVA,MEMORY_BYTES,root_pa);
+     /* After the first write, any failed verification retains memory until reset. */
+-    if(!global_unchanged())return false;
++    if(!global_unchanged() || rd(smmu,0x800+4*match)!=old_smr ||
++       rd(smmu,0xc00+4*match)!=old_s2cr ||
++       rd(gr1,4*context)!=old_cbar || rd(gr1,0x800+4*context)!=old_cba2r ||
++       !in2020_pcm_context_available(false,rd(cb,0),rd(cb,0x58),rd(cb,0x7f4)))return false;
++    for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i)
++        if(rd(cb,regs[i])!=saved[i])return false;
+     quarantined=true;
+-    bool ok=sync_reg(gr1,0x800+4*context,1) && sync_reg(gr1,4*context,0x1f300) &&
++    bool ok=sync_reg(cb,0,0) && sync_reg(gr1,0x800+4*context,1) && sync_reg(gr1,4*context,0x1f300) &&
+         sync_reg(cb,0x10,0x38011) && sync_reg(cb,0x30,0x803519) &&
+         sync_reg(cb,0x20,(uint32_t)root_pa) &&
+         sync_reg(cb,0x24,(uint32_t)(root_pa>>32)|((context+1)<<16)) &&
+--- /dev/null
++++ b/bsd/dev/in2020_pcm_context.h
+@@ -0,0 +1,15 @@
++#ifndef IN2020_PCM_CONTEXT_H
++#define IN2020_PCM_CONTEXT_H
++#include <stdint.h>
++#include <stdbool.h>
++/* A disabled context can retain TTBR/format/control state after its previous
++ * owner releases it. Only translation-enable bit M establishes active use;
++ * every live SMR reference, fault and busy TLB still excludes a candidate.
++ * Callers must separately snapshot all readable registers and restore them.
++ */
++static inline bool in2020_pcm_context_available(bool referenced,uint32_t control,
++    uint32_t fault,uint32_t tlb_status) {
++    return !referenced && control!=UINT32_MAX && !(control&1u) &&
++        fault==0 && tlb_status!=UINT32_MAX && !(tlb_status&1u);
++}
++#endif

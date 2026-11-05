@@ -1,3 +1,9 @@
+## 2026-11-05 STEP15R2 no sound: no context passes overstrict zero-state gate
+
+USER stillno sound/FB. VerifiedTWRPtemporaryboot1.647s, USER USBreconnect; readonly logs/ios-audio15-r2-20261105:507634bytes22flushnowrap SHA3e5e11094347411233ebfed0c7b472fd45cfac069b739e96d54405160e7e9492. HALinstall0 andAUDIOclientopened YES. GFSR0/SYNR0/0/0,geometryPASS,freeSMR5. Exactreason no unclaimed empty context, beforeASM orampenable. Prior inheritedfault hypothesis DISPROVEN. Actual individualCBvalues NOTlogged, cannotclaim disabledcandidate exists yet. AFEcleanupallACK/restored/ampsoff. PhoneLEFTTWRP.
+
+0130changes freeCBgate from entireSCTLR/TTBRzero to unreferenced inALLvalidSMRs, translation M=0,fault0,TLBnotbusy,readable snapshot. PinnedLinuxarm_smmu_write_context_bank disablesunassignedCBbySCTLRonly (leavesstaleTTBR), HakiOSspace_find checksMbit, supports notassumingzeroformat/tablehistory. Allsavedregs/GR1/SMR/S2CR recheckedimmediatelybeforefirstwrite andrestoredonconfirmedcleanup; noexistingactivecontexttakeover/no globalfaultclear. Logsfirst8unreferencedCBs andaggregatefailurecounts now. Newhostfixtures coverdisablednonzero control,referenced/active/fault/busy/allonesdeny. Build/check next. ReuseHAL41544746613 plusall3signaturefiles.
+
 ## 2026-11-05 STEP15 R2 BOOT ACCEPTED; user playback/log return pending
 
 USER buildcomplete/start. Native42109996047SUCCESS sourcea181d3db19415e40c286d833aa606d2d80cf7979; host42109800140SUCCESS source53deff5 (samefunctionalpolicy, earlierlessdiagnosticmessages). Superseded42109794890CANCELLED. Downloadactualkernel+buildlog,0129applied/compiled,noFAILEDhunks. KernelSHA c98ec55058ad7794a94189189caf7c5103f4c2ea44fad042315827960584e235 verifiedmanifest. ReuseHAL41544746613 unchanged, nowall3artifactfiles embeddedincluding_CodeSignature/CodeResources. Package builds/xnu-42109996047/in2020-ios-audio-step15-r2/in2020-ios16-adsp-step15-boot.img SHA bd0c2daf977ed08598aadeb24f2f6842bf30fe565d870d5b0325efa18d3e3d32,602cmd.
