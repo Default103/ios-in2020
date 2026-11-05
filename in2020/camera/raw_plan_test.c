@@ -8,6 +8,13 @@ static void p32(uint8_t *p,unsigned v) {for(unsigned i=0;i<4;++i)p[i]=(uint8_t)(
 static void row(uint8_t *p,unsigned a,unsigned v) {p[0]=(uint8_t)a;p[1]=(uint8_t)(a>>8);p[2]=(uint8_t)v;}
 static void fix(uint8_t *p) {p32(p+60,cp_crc(p+64,1696));}
 int main(int argc,char **argv) {
+    CHECK(cp_dma_readback(true,0x38011,0x38071));
+    CHECK(cp_dma_readback(true,0x38011,0x38011));
+    CHECK(!cp_dma_readback(true,0x38011,0x38070));
+    CHECK(!cp_dma_readback(true,0x38011,0x30071));
+    CHECK(!cp_dma_readback(false,0x38011,0x38071));
+    CHECK(!cp_dma_readback(true,0x38011,0xffffffff));
+
     uint8_t p[1760]={0},bad[1760];
     const unsigned h[]={1,155,57,212,0x471,0x10,4,0x3210,14,2328,1748,0,0};
     const unsigned r[]={0x112,0x113,0x114,0x34c,0x34d,0x34e,0x34f,0x342,0x343,0x340,0x341};

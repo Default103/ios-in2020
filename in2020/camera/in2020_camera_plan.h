@@ -29,6 +29,13 @@ static inline bool cp_plan(const uint8_t *p,size_t bytes) {
     for(unsigned i=0;i<11;++i)if(cp_value(p+64+155*8,57,regs[i])!=values[i])return false;
     return true;
 }
+/* ARM IHI0062D.c 16.5.39: TCR2[6:5] are TBI1/TBI0. They only
+ * affect full-width tagged ATS addresses; our DMA IOVAs are untagged 32-bit.
+ * IN2020 CB5 reads these two bits set. Check every other bit exactly.
+ * This exception must never apply to SCTLR, TTBR, TCR or stream routing. */
+static inline bool cp_dma_readback(bool tcr2,uint32_t wanted,uint32_t got) {
+    return got!=0xffffffffu && ((wanted^got)&(tcr2?~0x60u:~0u))==0;
+}
 static inline bool cp_context(bool referenced,uint32_t control,uint32_t fault,uint32_t tlb) {
     return !referenced && !(control&1u) && !(control&~0x11f7u) &&
         !(fault&0xc00001feu) && !(tlb&1u);

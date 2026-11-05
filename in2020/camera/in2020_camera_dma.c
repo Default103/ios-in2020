@@ -28,8 +28,9 @@ static void wr(vm_offset_t p,unsigned off,uint32_t v) {
 }
 static bool sync_reg(vm_offset_t p,unsigned off,uint32_t v) {
     wr(p,off,v);uint32_t got=rd(p,off);
-    if(got!=v)printf("IN2020 RAW DMA: write block=%s offset=%#x want=%#x got=%#x\n",p==cb?"CB":p==gr1?"GR1":"GR0",off,v,got);
-    return got==v;
+    bool ok=cp_dma_readback(p==cb && off==0x10,v,got);
+    if(!ok)printf("IN2020 RAW DMA: write block=%s offset=%#x want=%#x got=%#x\n",p==cb?"CB":p==gr1?"GR1":"GR0",off,v,got);
+    return ok;
 }
 static bool tlb(void) {
     wr(cb,0x610,context+1);wr(cb,0x7f0,1);

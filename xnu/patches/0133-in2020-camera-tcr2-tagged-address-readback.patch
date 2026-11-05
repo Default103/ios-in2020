@@ -1,0 +1,30 @@
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -28,8 +28,9 @@
+ }
+ static bool sync_reg(vm_offset_t p,unsigned off,uint32_t v) {
+     wr(p,off,v);uint32_t got=rd(p,off);
+-    if(got!=v)printf("IN2020 RAW DMA: write block=%s offset=%#x want=%#x got=%#x\n",p==cb?"CB":p==gr1?"GR1":"GR0",off,v,got);
+-    return got==v;
++    bool ok=cp_dma_readback(p==cb && off==0x10,v,got);
++    if(!ok)printf("IN2020 RAW DMA: write block=%s offset=%#x want=%#x got=%#x\n",p==cb?"CB":p==gr1?"GR1":"GR0",off,v,got);
++    return ok;
+ }
+ static bool tlb(void) {
+     wr(cb,0x610,context+1);wr(cb,0x7f0,1);
+--- a/bsd/dev/in2020_camera_plan.h
++++ b/bsd/dev/in2020_camera_plan.h
+@@ -29,6 +29,13 @@
+     for(unsigned i=0;i<11;++i)if(cp_value(p+64+155*8,57,regs[i])!=values[i])return false;
+     return true;
+ }
++/* ARM IHI0062D.c 16.5.39: TCR2[6:5] are TBI1/TBI0. They only
++ * affect full-width tagged ATS addresses; our DMA IOVAs are untagged 32-bit.
++ * IN2020 CB5 reads these two bits set. Check every other bit exactly.
++ * This exception must never apply to SCTLR, TTBR, TCR or stream routing. */
++static inline bool cp_dma_readback(bool tcr2,uint32_t wanted,uint32_t got) {
++    return got!=0xffffffffu && ((wanted^got)&(tcr2?~0x60u:~0u))==0;
++}
+ static inline bool cp_context(bool referenced,uint32_t control,uint32_t fault,uint32_t tlb) {
+     return !referenced && !(control&1u) && !(control&~0x11f7u) &&
+         !(fault&0xc00001feu) && !(tlb&1u);
