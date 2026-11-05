@@ -1,3 +1,9 @@
+## 2026-11-05 camera kernel verified and preflight1 image packaged; USB connection pending
+
+USER camera kernelcomplete/continuecamera. Actual42118403895SUCCESS sourceabc91eb958eb56af249168af1c202252bef538ef. Downloadkernel+buildlog,verify0131applied/in2020_camera.ccompiled/zeroFAILEDhunks; kernelSHA9204b3559fc304caee27b81b9c767835f4db06c09d55cee25878c187d79ff829 matchesmanifest. Packaged builds/xnu-42118403895/in2020-camera-preflight1/in2020-ios16-camera-preflight-boot.img SHA6eacbcf99220898391306ee575d09354e409e716544ee0eca9bb9f98a9f37d82,600cmd/in2020cam1, noDSPFW/updater/HALinstall. Observeronlypins+SPMIREADL; no sensorpower/I2C/ISP/DMA. IMAGE NOT BOOTED.
+
+CurrentfreshADB+FBinventoriesEMPTY. AsyncrequestUSER enterFB/reconnectUSB/replyconnected; awaitingreply. NoUSB/devicecommands beyondinventories, no phoneboot/reboot/flash/camerawrite. NeedFIRST savepriorR3speakerlog before camera boot overwritesring: uniqueKona->verifiedTWRPtemporaryboot->mayneedUSBreconnect->readonlycaptureNEWlogs/ios-audio15-r3-20261105. Keepcamera priority; don'tstartaudiofixautomaticallyfromcapture. ThenTWRP->FBverifyimagehash/product/downloadlimit->bootcamera1, askrun1-2minreturnFB forcamera1capture. Camera nativepower/CCI-ID/CSI480frames/iOSpreview allunfinished. Userhasalreadyauthorizedtheseoperations; onlyphysicalUSBavailabilitymissing.
+
 Camera-containing native CI dispatched42118403895/sourceabc91eb; pendingfullbuild. Do not confuse it with USER-running speaker42113591117/f404478. No cameraimagepackaged/booted yet.
 
 ## 2026-11-05 speaker STEP15R3 BOOT ACCEPTED; await user sound and FB return
