@@ -1,3 +1,7 @@
+## 2026-11-05 diagnostic correction before next boot
+
+Previous entry prematurely infers nonzeroGFSR: old memory_on has OTHER silent returns (no invalidSMR, no emptyCB, inaccessible registers/allocation/address guard). Actual root cause remains SMMUinit unavailable, beforeASM/AMP. Cannot assert inheritedGFSR from earlier log. New0129 now additionally logs noSMR/noCB/inaccessibleentries/addressbounds, fullGFSR+syndromes and geometrygate. Need NEWphonecapture to resolve actualbranch. Build42109794890source53deff5 superseded by clearer diagnostic source; host42109800140 can still verify same functional policy. No phoneboot afterTWRP/read-only capture.
+
 ## 2026-11-05 STEP15 no sound: pre-existing global SMMU fault blocks PCM
 
 USER no sound, returnedFB. UniqueKona/verifiedTWRP temporarybootOKAY1.649s; initial ADB not enumerating, USER reconnect then rootrecoveryavailable. Readonly logs/ios-audio15-20261105:716029bytes57flushnowrap rawSHA3044a7bec4a63a6bb8612cbc47dc6066bb0f5dd6b704b7e0b824f5b246c2ce12,review.json. HALinstall0,AFEclock/config/startOK, pinactivity. PCM SMMUscr2e0406/id04c017e57/id16000004a =>87SMR/74CB/0S2CB/128pages4K andallgeometryguardsPASS; next memoryunavailable quarantine0/noASM. Remaining predicate is nonzero pre-existingGFSR, actualvalueNOTlogged. NoPCMstream/ampenablethisboot;AFEcleanupallACK,pinrestoreall1,ampsoff. Do not blameHALload yet; onlyinstallproven. PhoneLEFTTWRP aftercapture, no rootwrite thisturn.

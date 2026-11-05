@@ -81,12 +81,14 @@ static bool memory_on(void) {
     printf("IN2020 PCM: SMMU scr=%#x id0=%#x id1=%#x SMRs=%u CBs=%u S2CBs=%u\n",scr,id0,id1,matches,contexts,stage2);
     if(scr==0xffffffff || id0==0xffffffff || id1==0xffffffff || (scr&8) ||
        !matches || matches>128 || !contexts || contexts>128 || stage2>=contexts ||
-       2u*page*pages!=0x100000 || contexts>pages || !global_unchanged())return false;
+       2u*page*pages!=0x100000 || contexts>pages || !global_unchanged()) {
+        printf("IN2020 PCM: geometry/access gate rejected\n");return false;
+    }
     delay_for_interval(1,NSEC_PER_MSEC);if(!global_unchanged())return false;
     bool used[128]={false};match=~0u;context=~0u;
     for(unsigned i=0;i<matches;++i) {
         uint32_t s=rd(smmu,0x800+4*i),c=rd(smmu,0xc00+4*i);
-        if(s==0xffffffff || c==0xffffffff)return false;
+        if(s==0xffffffff || c==0xffffffff) {printf("IN2020 PCM: inaccessible SMR/S2CR index=%u\n",i);return false;}
         if(s>>31) {
             if((c&255)<contexts)used[c&255]=true;
             if(((s^AUDIO_SID)&(~(s>>16)&0x7fff))==0) {
@@ -95,7 +97,8 @@ static bool memory_on(void) {
             }
         } else if(match==~0u) {match=i;old_smr=s;old_s2cr=c;}
     }
-    if(match==~0u)return false;
+    if(match==~0u) {printf("IN2020 PCM: no invalid SMR available; existing entries untouched\n");return false;}
+    printf("IN2020 PCM: free SMR=%u; scanning %u context banks\n",match,contexts-stage2);
     for(unsigned i=stage2;i<contexts;++i) {
         vm_offset_t p=smmu+(pages+i)*page;
         if(!used[i] && rd(p,0)==0 && rd(p,0x20)==0 && rd(p,0x24)==0 &&
@@ -103,19 +106,19 @@ static bool memory_on(void) {
     }
     if(context==~0u) {printf("IN2020 PCM: no unclaimed empty context\n");return false;}
     gr1=smmu+page;old_cbar=rd(gr1,4*context);old_cba2r=rd(gr1,0x800+4*context);
-    if(old_cbar==0xffffffff || old_cba2r==0xffffffff)return false;
+    if(old_cbar==0xffffffff || old_cba2r==0xffffffff) {printf("IN2020 PCM: GR1 inaccessible CB=%u\n",context);return false;}
     for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i) {
-        saved[i]=rd(cb,regs[i]);if(saved[i]==0xffffffff)return false;
+        saved[i]=rd(cb,regs[i]);if(saved[i]==0xffffffff) {printf("IN2020 PCM: CB=%u reg=%#x inaccessible\n",context,regs[i]);return false;}
     }
     if(kmem_alloc(kernel_map,&buffer,MEMORY_BYTES,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
     if(kmem_alloc(kernel_map,&tables,16384,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
     uint64_t *root=(uint64_t *)tables,*second=(uint64_t *)(tables+4096),*third=(uint64_t *)(tables+8192);
     uint64_t root_pa=kvtophys(tables);
-    if((root_pa&0xfff) || root_pa>>36)return false;
+    if((root_pa&0xfff) || root_pa>>36) {printf("IN2020 PCM: root PA out of bounds\n");return false;}
     root[0]=kvtophys(tables+4096)|3;second[128]=kvtophys(tables+8192)|3;
     for(unsigned i=0;i<MEMORY_BYTES/4096;++i) {
         uint64_t pa=kvtophys(buffer+i*4096);
-        if((pa&0xfff) || pa>>36)return false;
+        if((pa&0xfff) || pa>>36) {printf("IN2020 PCM: buffer page=%u PA out of bounds\n",i);return false;}
         third[i]=pa|0xe43ull;
     }
     for(vm_offset_t p=tables;p<tables+16384;p+=64)__asm__ volatile("dc cvac,%0"::"r"(p):"memory");
