@@ -1,0 +1,87 @@
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -13,6 +13,9 @@
+ _Static_assert(ALLOC_BYTES<=3u*512u*4096u,"three 4K leaf tables bound");
+ static vm_offset_t smmu,cb,gr1,buffer,tables;
+ static unsigned match,context;
++static unsigned slots[4];
++static uint32_t slot_smr[4],slot_route[4];
++static const unsigned camera_ids[4]={0x800,0x801,0x840,0x841};
+ #define CAMERA_ASID 0xfffeu
+ static uint32_t old_smr,old_s2cr,old_cbar,old_cba2r;
+ static const unsigned regs[]={0,0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
+@@ -88,22 +91,28 @@
+      * No S2CR/CB changes until a writable slot is found; active streams untouched.
+      * Linux arm_smmu_test_smr_masks likewise tests fields while VALID is zero. */
+     match=~0u;
+-    const uint32_t probe=(CAMERA_MASK<<16)|CAMERA_SID;
++    unsigned claimed=0;
+     for(unsigned i=0;i<matches;++i) {
+         unsigned off=0x800+4*i;
+         uint32_t before=rd(smmu,off),route=rd(smmu,0xc00+4*i);
+         if(before==0xffffffff || route==0xffffffff)return false;
+         if(before>>31)continue;
++        const uint32_t probe=(0x400u<<16)|camera_ids[claimed];
+         wr(smmu,off,probe);uint32_t got=rd(smmu,off);
+         wr(smmu,off,before);uint32_t restored=rd(smmu,off);
+         printf("IN2020 RAW DMA: invalid SMR%u probe=%#x read=%#x restored=%d\n",i,probe,got,restored==before);
+         if(restored!=before || (got>>31) || rd(smmu,0xc00+4*i)!=route) {
+             quarantined=true;return false;
+         }
+-        if(got==probe) {match=i;old_smr=before;old_s2cr=route;break;}
++        if(got==probe) {
++            slots[claimed]=i;slot_smr[claimed]=before;slot_route[claimed]=route;
++            if(++claimed==4)break;
++            continue;
++        }
+         if(got!=before) {printf("IN2020 RAW DMA: unsupported SMR fields; restored, refusing\n");return false;}
+     }
+-    if(match==~0u) {printf("IN2020 RAW DMA: no writable invalid SMR; no CB/route changes\n");return false;}
++    if(claimed!=4) {printf("IN2020 RAW DMA: need four writable FDT stream slots, got %u; no CB/route changes\n",claimed);return false;}
++    match=slots[0];old_smr=slot_smr[0];old_s2cr=slot_route[0];
+     printf("IN2020 RAW DMA: free SMR=%u; scanning %u context banks\n",match,contexts-stage2);
+     for(unsigned i=stage2;i<contexts;++i) {
+         if(used[i])continue;
+@@ -151,6 +160,8 @@
+     /* After the first write, any failed verification retains memory until reset. */
+     if(!global_unchanged() || rd(smmu,0x800+4*match)!=old_smr ||
+        rd(smmu,0xc00+4*match)!=old_s2cr)return false;
++    for(unsigned i=0;i<4;++i)
++        if(rd(smmu,0x800+4*slots[i])!=slot_smr[i] || rd(smmu,0xc00+4*slots[i])!=slot_route[i])return false;
+     for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i)
+         if(rd(cb,regs[i])!=saved[i])return false;
+     quarantined=true;
+@@ -160,19 +171,29 @@
+         sync_reg(cb,0x24,(uint32_t)(root_pa>>32)|(CAMERA_ASID<<16)) &&
+         sync_reg(cb,0x28,0) && sync_reg(cb,0x2c,0) &&
+         sync_reg(cb,0x38,0xf404ff44) && sync_reg(cb,0x3c,0) && tlb() &&
+-        sync_reg(cb,0,0x127) && sync_reg(smmu,0xc00+4*match,context) &&
+-        sync_reg(smmu,0x800+4*match,0x80000000u|(CAMERA_MASK<<16)|CAMERA_SID);
++        sync_reg(cb,0,0x127);
++    /* Preserve the actual FDT's four distinct mask-0x400 routes, rather
++     * than synthesizing one wider mask-0x441 route. OnePlus write_s2cr
++     * also explicitly sets SHCFG_NSH (bits9:8=3) before publishing SMR. */
++    for(unsigned i=0;ok && i<4;++i) {
++        ok=sync_reg(smmu,0xc00+4*slots[i],0x300u|context) &&
++           sync_reg(smmu,0x800+4*slots[i],0x80000000u|(0x400u<<16)|camera_ids[i]);
++        printf("IN2020 RAW DMA: FDT stream %u slot=%u SMR=%#x S2CR=%#x SCTLR=%#x FSR=%#x GFSR=%#x published=%d\n",
++            i,slots[i],rd(smmu,0x800+4*slots[i]),rd(smmu,0xc00+4*slots[i]),rd(cb,0),rd(cb,0x58),rd(smmu,0x48),ok);
++    }
+     published=ok;
+     return ok;
+ }
+ static bool memory_off(void) {
+     if(!published)return false;
+-    bool ok=sync_reg(smmu,0x800+4*match,old_smr) && sync_reg(cb,0,0) && tlb();
++    bool ok=true;
++    for(unsigned i=0;i<4;++i)ok=sync_reg(smmu,0x800+4*slots[i],slot_smr[i])&&ok;
++    ok=sync_reg(cb,0,0)&&ok;ok=tlb()&&ok;
+     if(!ok)return false;
+     for(unsigned i=1;i<sizeof(regs)/sizeof(regs[0]);++i)ok=sync_reg(cb,regs[i],saved[i])&&ok;
+     ok=sync_reg(gr1,4*context,old_cbar)&&ok;
+     ok=sync_reg(gr1,0x800+4*context,old_cba2r)&&ok;
+-    ok=sync_reg(smmu,0xc00+4*match,old_s2cr)&&ok;
++    for(unsigned i=0;i<4;++i)ok=sync_reg(smmu,0xc00+4*slots[i],slot_route[i])&&ok;
+     ok=sync_reg(cb,0,saved[0])&&ok;
+     if(ok) {published=false;quarantined=false;}
+     return ok;
