@@ -11,6 +11,12 @@
      if(err==ENOENT) {
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -5622,1 +5622,1 @@
+@@ -5619,7 +5619,7 @@
+ 				extern bool in2020_camera_ui_ready;
+ 				bool camera = in2020_camera_ui_ready && namelen == 11 && strncmp(name, "SpringBoard", 11) == 0;
+ 				int written = snprintf(env, size, "DYLD_INSERT_LIBRARIES=%.*s%s", (int)liblen, lib,
 -				    camera ? ":/usr/local/lib/in2020-camera-ui-v1.dylib" : "");
 +				    camera ? ":/usr/local/lib/in2020-camera-ui-v2.dylib" : "");
+ 				return written >= 0 && (size_t)written < size;
+ 			}
+ 			word += len + (word + len < group + grouplen && word[len] == ',');
