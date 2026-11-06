@@ -1,8 +1,8 @@
 # IN2020 native camera
 
 The five sensors have been identified through the recovery kernel. This native
-XNU implementation is still in bring-up; no native frame or iOS camera preview
-has been demonstrated.
+XNU implementation has captured and independently CRC-checked native front
+IMX471 and tele S5K3M5 RAW frames. System UI testing is the next step.
 
 The first target is the fixed-focus IMX471 front sensor: slot2, CCI1 master1,
 CSI PHY3. `in2020_camera_board.h` is checked against the measured FDT by
@@ -98,3 +98,21 @@ readback checks still gate success. The tele profile has compiled and passed
 host checks but has not yet captured a native frame. IMX689 MP and IMX586
 plans have been checked offline; their C-PHY hardware path remains pending.
 System viewfinder integration follows the three rear-camera tests.
+
+
+Stage 3 (`in2020cam=3`) offers an opt-in system test panel for these two sensors.
+It installs a digest-checked versioned UIKit library and adds it to SpringBoard's
+existing injection list. After 30 seconds it offers front/tele selection, manual
+capture/refresh and collapse/reopen. Each request runs the reviewed finite
+capture, stops the sensor and DMA, checks guards/stable CRC, restores hardware,
+then exposes that frame. The panel validates header and CRC independently.
+It displays a downsampled grey RAW preview with percentile contrast for viewing;
+this is not calibrated color, automatic exposure, continuous video or AVFoundation.
+
+Only the two fixed private ADT plans are selectable. One client opens the device;
+concurrent reads/captures fail busy. Any failed capture blocks further hardware
+requests until reboot. Wired storage is reused only after exact mapping cleanup;
+uncertain mappings remain quarantined. System window rendering is not verified.
+Build UI with `in2020-camera-userland.yml`, kernel with `xnu.yml`, then package
+locally with `tools/build-in2020-camera-system.py`. Module tables and captured
+images remain private.

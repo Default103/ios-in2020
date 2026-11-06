@@ -1,0 +1,284 @@
+--- a/bsd/dev/in2020_camera.c
++++ b/bsd/dev/in2020_camera.c
+@@ -64,6 +64,7 @@
+         ppid,apid,rd(cnfg,0x700+4*apid)&7,v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
+ }
+ extern void in2020_camera_capture(void);
++extern void cr_system_init(void);
+ static void camera_thread(void *arg,__unused wait_result_t result) {
+     if((uintptr_t)arg==2) {in2020_camera_capture();return;}
+     printf("IN2020 CAMERA: stage1 front IMX471 slot2 CCI1/master1 PHY3; observe only\n");
+@@ -95,6 +96,7 @@
+     (void)PE_parse_boot_argn("in2020cam",&stage,sizeof(stage));
+     if(!stage)return;
+     started=true;
++    if(stage==3) {cr_system_init();return;}
+     if(stage!=1 && stage!=2) {printf("IN2020 CAMERA: unsupported stage=%u\n",stage);return;}
+     if(kernel_thread_start(camera_thread,(void *)(uintptr_t)stage,&thread)==KERN_SUCCESS)thread_deallocate(thread);
+     else printf("IN2020 CAMERA: cannot start observer thread\n");
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -37,7 +37,7 @@
+ static bool phy_up(void) {
+     DTEntry node;const void *property=NULL;unsigned length=0;
+     if(SecureDTLookupEntry(NULL,"/in2020-camera",&node)!=kSuccess ||
+-       SecureDTGetProperty(node,"phy-ops",&property,&length)!=kSuccess || length<8)return false;
++       SecureDTGetProperty(node,cr_requested_sensor==2?"tele-phy-ops":"phy-ops",&property,&length)!=kSuccess || length<8)return false;
+     const uint8_t *p=property;unsigned n=cp32(p);
+     if(n>128 || length!=8+n*8 || cp32(p+4)!=cp_crc(p+8,n*8))return false;
+     for(unsigned i=0;i<n;++i) {
+@@ -138,12 +138,15 @@
+     printf("IN2020 RAW: export path=%s bytes=%u crc=%#x error=%d residual=%d\n",path,CR_BYTES,crc,err,resid);
+     return !err && !resid;
+ }
+-void in2020_camera_capture(void) {
++static uint32_t cr_system_crc;
++static bool capture(bool save) {
++    phy=csid=ife=gic=0;irq_masked=0;
++    phy_active=csid_active=ife_active=false;
+     bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false;
+ 
+-    if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return;}
++    if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return false;}
+     printf("IN2020 RAW: native one-frame sensor=%#x RAW10 %ux%u stride=%u\n",cr_config.id,CR_WIDTH,CR_HEIGHT,CR_STRIDE);
+-    delay_for_interval(5,NSEC_PER_SEC); /* let existing input/power bring-up finish */
++    if(save)delay_for_interval(5,NSEC_PER_SEC);
+     if(!irqs_take())goto end;
+     clocks=true;if(!cr_clocks_up())goto end;
+     sensor=true;if(!cr_sensor_up() || !cr_sensor_program())goto end;
+@@ -178,10 +181,130 @@
+             const uint8_t *p=cr_dma_data();unsigned changed=0;
+             for(unsigned i=0;i<CR_BYTES;++i)changed+=p[i]!=0xa5;
+             uint32_t crc=cp_crc(p,CR_BYTES);delay_for_interval(10,NSEC_PER_MSEC);cr_dma_invalidate();
+-            if(changed>CR_BYTES/16 && cp_crc(p,CR_BYTES)==crc && cr_dma_ok())exported=export_frame(crc);
++            if(changed>CR_BYTES/16 && cp_crc(p,CR_BYTES)==crc && cr_dma_ok()) {
++                exported=save?export_frame(crc):true;
++                if(!save)cr_system_crc=crc;
++            }
+         }
+     }
+     if(dma)cr_dma_down(stopped);
+     irqs_restore(stopped);
+     printf("IN2020 RAW: result frame-IRQ=%d cleanup=%d exported=%d; success requires valid file payload\n",frame,stopped,exported);
+-}
++    return exported && stopped && cr_dma_reusable();
++}
++
++void in2020_camera_capture(void) {(void)capture(true);}
++bool cr_system_capture(unsigned sensor,uint32_t *crc) {
++    if((sensor!=1 && sensor!=2) || !cr_dma_reusable())return false;
++    cr_requested_sensor=sensor;
++    bool ok=capture(false);
++    if(ok)*crc=cr_system_crc;
++    return ok;
++}
++
++/* Stage3: finite snapshots from UIKit; no raw MMIO or user-supplied modes.
++ * A failed request blocks all further hardware access until the next boot. */
++#include <sys/conf.h>
++#include <kern/locks.h>
++#include <miscfs/devfs/devfs.h>
++#include <corecrypto/ccdigest.h>
++#include <corecrypto/ccsha2.h>
++#include "in2020_camera_user.h"
++static LCK_GRP_DECLARE(camera_group,"in2020-camera");
++static LCK_MTX_DECLARE(camera_mutex,&camera_group);
++static bool opened,busy,poisoned,have_frame;
++static struct frame_header user_header;
++bool in2020_camera_ui_ready;
++static int camera_open(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {
++    lck_mtx_lock(&camera_mutex);
++    int err=(opened||busy)?EBUSY:0;if(!err)opened=true;
++    lck_mtx_unlock(&camera_mutex);return err;
++}
++static int camera_close(__unused dev_t d,__unused int f,__unused int t,__unused struct proc *p) {
++    lck_mtx_lock(&camera_mutex);opened=false;lck_mtx_unlock(&camera_mutex);return 0;
++}
++static int camera_ioctl(__unused dev_t d,u_long command,caddr_t data,__unused int f,__unused struct proc *p) {
++    if(command!=IN2020_CAMERA_SNAPSHOT)return ENOTTY;
++    unsigned sensor=*(uint32_t *)data;if(sensor!=1 && sensor!=2)return EINVAL;
++    lck_mtx_lock(&camera_mutex);
++    if(busy || poisoned) {int err=poisoned?EIO:EBUSY;lck_mtx_unlock(&camera_mutex);return err;}
++    busy=true;have_frame=false;lck_mtx_unlock(&camera_mutex);
++    uint32_t crc=0;bool ok=cr_system_capture(sensor,&crc);
++    lck_mtx_lock(&camera_mutex);
++    if(ok)user_header=(struct frame_header){{'I','2','0','F','R','A','M','E'},1,CR_WIDTH,CR_HEIGHT,CR_STRIDE,10,crc,1,0,mach_absolute_time(),{0}};
++    have_frame=ok;poisoned=!ok;busy=false;lck_mtx_unlock(&camera_mutex);
++    printf("IN2020 CAMERA UI: snapshot sensor=%u success=%d crc=%#x\n",sensor,ok,crc);
++    return ok?0:EIO;
++}
++static int camera_read(__unused dev_t d,struct uio *uio,__unused int flags) {
++    lck_mtx_lock(&camera_mutex);
++    if(busy || !have_frame) {int err=busy?EBUSY:ENODATA;lck_mtx_unlock(&camera_mutex);return err;}
++    busy=true;lck_mtx_unlock(&camera_mutex);
++    off_t offset=uio_offset(uio);int err=0;
++    size_t total=sizeof(user_header)+(size_t)user_header.stride*user_header.height;
++    if(offset<0)err=EINVAL;
++    else if((uint64_t)offset<total && uio_resid(uio)>0) {
++        if((size_t)offset<sizeof(user_header)) {
++            size_t n=MIN((size_t)uio_resid(uio),sizeof(user_header)-(size_t)offset);
++            err=uiomove((char *)&user_header+(size_t)offset,(int)n,uio);
++        }
++        offset=uio_offset(uio);
++        if(!err && (size_t)offset>=sizeof(user_header) && (size_t)offset<total && uio_resid(uio)>0) {
++            size_t n=MIN((size_t)uio_resid(uio),total-(size_t)offset);
++            err=uiomove((char *)cr_dma_data()+(size_t)offset-sizeof(user_header),(int)n,uio);
++        }
++    }
++    lck_mtx_lock(&camera_mutex);busy=false;lck_mtx_unlock(&camera_mutex);return err;
++}
++static const struct cdevsw camera_cdevsw={
++    .d_open=camera_open,.d_close=camera_close,.d_read=camera_read,.d_write=eno_rdwrt,
++    .d_ioctl=camera_ioctl,.d_stop=eno_stop,.d_reset=eno_reset,.d_select=eno_select,
++    .d_mmap=eno_mmap,.d_strategy=eno_strat,.d_type=0
++};
++/* Only this fixed, versioned dylib can be created; never overwrite an existing
++ * different file. ADT digest + post-write readback precede enabling injection. */
++static int install_ui(void) {
++    DTEntry node;const void *property=NULL;unsigned length=0;
++    if(SecureDTLookupEntry(NULL,"/in2020-camera",&node)!=kSuccess ||
++       SecureDTGetProperty(node,"ui-dylib",&property,&length)!=kSuccess || length<=32 || length>1024*1024)return EINVAL;
++    const uint8_t *bytes=property;uint8_t hash[32];
++    const struct ccdigest_info *di=&ccsha256_ltc_di;
++    ccdigest_ctx_decl(CCSHA256_STATE_SIZE,CCSHA256_BLOCK_SIZE,h);
++    ccdigest_init(di,h);ccdigest_update(di,h,length-32,bytes+32);ccdigest_final(di,h,hash);
++    if(memcmp(hash,bytes,32))return EINVAL;
++    const char *path="/usr/local/lib/in2020-camera-ui-v1.dylib";
++    vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;int resid=0;
++    int err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);
++    if(err==ENOENT) {
++        err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0755,0,&vp,ctx);
++        if(err)return err;
++        err=vn_rdwr(UIO_WRITE,vp,(caddr_t)(uintptr_t)(bytes+32),length-32,0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++        (void)vnode_close(vp,FWRITE,ctx);vp=NULLVP;
++        if(err || resid)return err?err:EIO;
++        err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);
++    }
++    if(err)return err;
++    struct vnode_attr va;VATTR_INIT(&va);VATTR_WANTED(&va,va_data_size);VATTR_WANTED(&va,va_uid);VATTR_WANTED(&va,va_mode);
++    err=vnode_getattr(vp,&va,ctx);
++    if(!err && (vnode_vtype(vp)!=VREG || va.va_uid || (va.va_mode&022) || va.va_data_size!=length-32))err=EPERM;
++    ccdigest_init(di,h);
++    uint8_t block[4096];
++    for(unsigned at=0;!err && at<length-32;) {
++        unsigned n=MIN((unsigned)sizeof(block),length-32-at);
++        err=vn_rdwr(UIO_READ,vp,(caddr_t)block,n,at,UIO_SYSSPACE,IO_NOAUTH,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
++        if(!err && resid)err=EIO;
++        if(!err)ccdigest_update(di,h,n,block);at+=n;
++    }
++    ccdigest_final(di,h,hash);(void)vnode_close(vp,FREAD,ctx);
++    return err?err:memcmp(hash,bytes,32)?EINVAL:0;
++}
++void cr_system_init(void) {
++    int err=install_ui();
++    if(err) {printf("IN2020 CAMERA UI: installation refused error=%d\n",err);return;}
++    int major=cdevsw_add(-1,&camera_cdevsw);
++    if(major<0 || !devfs_make_node(makedev(major,0),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"in2020-camera")) {
++        printf("IN2020 CAMERA UI: devfs registration failed\n");return;
++    }
++    in2020_camera_ui_ready=true;
++    printf("IN2020 CAMERA UI: ready /dev/in2020-camera; front+tele manual snapshots\n");
++}
+--- a/bsd/dev/in2020_camera_clocks.c
++++ b/bsd/dev/in2020_camera_clocks.c
+@@ -51,6 +51,11 @@
+         cr_put(cc,cr_config.mclk_branch,mclk_branch|1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,0,2000);
+ }
+ bool cr_clocks_up(void) {
++    cc=gcc=refgen=0;
++    arc_owned=pll_owned=gdsc_owned=ref_owned=mipi_owned=mclk_owned=false;
++    for(unsigned i=0;i<sizeof(branches)/sizeof(branches[0]);++i)branches[i].owned=false;
++    for(unsigned i=0;i<6;++i)roots[i].owned=false;
++    roots[3].cmd=0x6060;branches[6].offset=0x607c;branches[7].offset=0x6078;
+     if(cr_config.rear) {roots[3].cmd=0x6040;branches[6].offset=0x605c;branches[7].offset=0x6058;}
+     arc_owned=true;if(in2020_rpmh_camera_arc(true))return false;
+     gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -59,7 +59,10 @@
+     }
+     return true;
+ }
++bool cr_dma_reusable(void) {return !published && !quarantined;}
+ bool cr_dma_up(void) {
++    if(!cr_dma_reusable())return false;
++    cb=gr1=0;accepted_routes=0;
+     if(ALLOC_BYTES>3u*512u*4096u)return false;
+     smmu=ml_io_map(0x15000000,0x100000);
+     if(!smmu)return false;
+@@ -142,9 +145,10 @@
+     }
+     unsigned audio=0;(void)PE_parse_boot_argn("in2020adsp",&audio,sizeof(audio));
+     if(audio) {printf("IN2020 RAW DMA: concurrent audio not supported\n");return false;}
+-    if(kmem_alloc(kernel_map,&buffer,ALLOC_BYTES,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    if(!buffer && kmem_alloc(kernel_map,&buffer,3u*512u*4096u,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
+     memset((void *)buffer,0xa5,ALLOC_BYTES);
+-    if(kmem_alloc(kernel_map,&tables,32768,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    if(!tables && kmem_alloc(kernel_map,&tables,32768,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    memset((void *)tables,0,32768);
+     uint64_t *root=(uint64_t *)tables,*second=(uint64_t *)(tables+4096);
+     uint64_t root_pa=kvtophys(tables);
+     if((root_pa&0xfff) || root_pa>>36) {printf("IN2020 RAW DMA: root PA out of bounds\n");return false;}
+--- a/bsd/dev/in2020_camera_raw.h
++++ b/bsd/dev/in2020_camera_raw.h
+@@ -12,6 +12,10 @@
+     bool rear;
+ };
+ extern struct cr_configuration cr_config;
++extern unsigned cr_requested_sensor;
++bool cr_dma_reusable(void);
++bool cr_system_capture(unsigned,uint32_t *);
++void cr_system_init(void);
+ #define CR_WIDTH (cr_config.width)
+ #define CR_HEIGHT (cr_config.height)
+ #define CR_STRIDE (cr_config.stride)
+--- a/bsd/dev/in2020_camera_sensor.c
++++ b/bsd/dev/in2020_camera_sensor.c
+@@ -10,14 +10,20 @@
+ static unsigned ppids[2]={0xb46,0xb42},millivolts[2]={1800,1056};
+ static const uint8_t *plan;
+ bool cr_sensor_plan_valid(void);
++unsigned cr_requested_sensor;
+ bool cr_sensor_plan_valid(void) {
+     DTEntry n;const void *p=NULL;unsigned length=0;
+     if(SecureDTLookupEntry(NULL,"/in2020-camera",&n)!=kSuccess ||
+-       SecureDTGetProperty(n,"front-plan",&p,&length)!=kSuccess)return false;
++       SecureDTGetProperty(n,cr_requested_sensor==1?"front-plan":cr_requested_sensor==2?"tele-plan":"front-plan",&p,&length)!=kSuccess)return false;
+     if(cp_tele_plan(p,length)) {
+         cr_config=(struct cr_configuration){2104,1560,2640,918,53,0x30d5,0,0x2d,2,0xac6e000,511,0x5038,0x5050,16,true};
+         rails[1]="ldof4";ppids[1]=0xb43;
+-    } else if(!cp_plan(p,length))return false;
++    } else {
++        if(!cp_plan(p,length))return false;
++        cr_config=(struct cr_configuration){2328,1748,2912,155,57,0x471,0x16,0x10,3,0xac70000,480,0x5054,0x506c,14,false};
++        rails[1]="ldof3";ppids[1]=0xb42;
++    }
++    saved=reset_taken=power_taken=false;rail_vote[0]=rail_vote[1]=false;
+     plan=p;return true;
+ }
+ static bool pmic(unsigned ppid,unsigned offset,uint8_t *v) {return in2020_camera_pmic_read(ppid,offset,v);}
+--- /dev/null
++++ b/bsd/dev/in2020_camera_user.h
+@@ -0,0 +1,8 @@
++/* Fixed camera snapshot ABI, shared by XNU and UIKit. APSL2.0. */
++#ifndef IN2020_CAMERA_USER_H
++#define IN2020_CAMERA_USER_H
++#include <sys/ioccom.h>
++#include <stdint.h>
++/* 1=front IMX471, 2=tele S5K3M5. Blocking finite capture; read I20FRAME after. */
++#define IN2020_CAMERA_SNAPSHOT _IOW('C', 1, uint32_t)
++#endif
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -5616,7 +5616,10 @@
+ 				len++;
+ 			}
+ 			if (len == namelen && strncmp(word, name, len) == 0) {
+-				int written = snprintf(env, size, "DYLD_INSERT_LIBRARIES=%.*s", (int)liblen, lib);
++				extern bool in2020_camera_ui_ready;
++				bool camera = in2020_camera_ui_ready && namelen == 11 && strncmp(name, "SpringBoard", 11) == 0;
++				int written = snprintf(env, size, "DYLD_INSERT_LIBRARIES=%.*s%s", (int)liblen, lib,
++				    camera ? ":/usr/local/lib/in2020-camera-ui-v1.dylib" : "");
+ 				return written >= 0 && (size_t)written < size;
+ 			}
+ 			word += len + (word + len < group + grouplen && word[len] == ',');

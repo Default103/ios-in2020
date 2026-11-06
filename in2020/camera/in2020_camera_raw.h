@@ -12,6 +12,10 @@ struct cr_configuration {
     bool rear;
 };
 extern struct cr_configuration cr_config;
+extern unsigned cr_requested_sensor;
+bool cr_dma_reusable(void);
+bool cr_system_capture(unsigned,uint32_t *);
+void cr_system_init(void);
 #define CR_WIDTH (cr_config.width)
 #define CR_HEIGHT (cr_config.height)
 #define CR_STRIDE (cr_config.stride)

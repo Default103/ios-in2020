@@ -59,7 +59,10 @@ static bool global_unchanged(void) {
     }
     return true;
 }
+bool cr_dma_reusable(void) {return !published && !quarantined;}
 bool cr_dma_up(void) {
+    if(!cr_dma_reusable())return false;
+    cb=gr1=0;accepted_routes=0;
     if(ALLOC_BYTES>3u*512u*4096u)return false;
     smmu=ml_io_map(0x15000000,0x100000);
     if(!smmu)return false;
@@ -142,9 +145,10 @@ bool cr_dma_up(void) {
     }
     unsigned audio=0;(void)PE_parse_boot_argn("in2020adsp",&audio,sizeof(audio));
     if(audio) {printf("IN2020 RAW DMA: concurrent audio not supported\n");return false;}
-    if(kmem_alloc(kernel_map,&buffer,ALLOC_BYTES,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
+    if(!buffer && kmem_alloc(kernel_map,&buffer,3u*512u*4096u,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
     memset((void *)buffer,0xa5,ALLOC_BYTES);
-    if(kmem_alloc(kernel_map,&tables,32768,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
+    if(!tables && kmem_alloc(kernel_map,&tables,32768,KMA_KOBJECT|KMA_ZERO|KMA_DATA,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
+    memset((void *)tables,0,32768);
     uint64_t *root=(uint64_t *)tables,*second=(uint64_t *)(tables+4096);
     uint64_t root_pa=kvtophys(tables);
     if((root_pa&0xfff) || root_pa>>36) {printf("IN2020 RAW DMA: root PA out of bounds\n");return false;}

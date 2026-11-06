@@ -1,0 +1,37 @@
+name: IN2020 system camera test
+on:
+  workflow_dispatch:
+  push:
+    branches: [in2020-current]
+    paths: ["userland/camera/**", "in2020/camera/in2020_camera_user.h", ".github/workflows/in2020-camera-userland.yml"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check RAW10 decoder and frame bounds with sanitizers
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g userland/camera/preview_test.c -o /tmp/camera-preview-test
+          /tmp/camera-preview-test
+      - name: Build signed UIKit camera test panel
+        run: |
+          set -eux
+          mkdir -p out
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
+            -O2 -Wall -Wextra -Werror -fobjc-arc -dynamiclib -Iin2020/camera \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            -install_name /usr/local/lib/in2020-camera-ui-v1.dylib \
+            -o out/in2020-camera-ui-v1.dylib userland/camera/camera_ui.m
+          codesign -s - -f out/in2020-camera-ui-v1.dylib
+          codesign --verify --strict out/in2020-camera-ui-v1.dylib
+          otool -L out/in2020-camera-ui-v1.dylib
+          cd out
+          shasum -a 256 in2020-camera-ui-v1.dylib > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: in2020-camera-ui
+          path: out/

@@ -2,7 +2,7 @@
 from pathlib import Path
 import re
 root = Path(__file__).resolve().parents[1]
-names = ('in2020_camera.c', 'in2020_camera_board.h', 'in2020_camera_capture.c', 'in2020_camera_clocks.c', 'in2020_camera_dma.c', 'in2020_camera_plan.h', 'in2020_camera_raw.h', 'in2020_camera_sensor.c')
+names = ('in2020_camera.c', 'in2020_camera_board.h', 'in2020_camera_capture.c', 'in2020_camera_clocks.c', 'in2020_camera_dma.c', 'in2020_camera_plan.h', 'in2020_camera_raw.h', 'in2020_camera_sensor.c', 'in2020_camera_user.h')
 state = {}
 for patch in sorted((root / 'xnu/patches').glob('*.patch')):
     if int(patch.name[:4]) < 131:

@@ -20,6 +20,7 @@ on:
     paths:
       - "userland/**"
       - "!userland/audio/**"
+      - "!userland/camera/**"
       - ".github/workflows/in2020-userland.yml"
 
 permissions:

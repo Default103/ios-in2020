@@ -92,9 +92,33 @@ class HFS:
             records.append(((parent, name), r[2+keylen:]))
         return struct.unpack_from('b', b, 8)[0], be32(b), records
 
+    def parent_leaf(self, parent):
+        # Parent IDs are the primary catalog sort key. Seek strictly before
+        # the target parent; this also catches names split across leaf nodes
+        # without assuming Python implements HFS Unicode name collation.
+        current, visited = self.root, set()
+        while True:
+            require(current not in visited and len(visited)<32, 'catalog index cycle/height')
+            visited.add(current)
+            kind, following, rows = self.node(current)
+            if kind == -1:
+                return current
+            require(kind == 0 and rows, 'invalid catalog index node')
+            selected = None
+            for (pid, name), data in rows:
+                require(len(data) == 4, 'invalid catalog index pointer')
+                child = be32(data)
+                require(child != 0, 'catalog index points to header')
+                if selected is None:
+                    selected = child
+                if pid >= parent:
+                    break
+                selected = child
+            current = selected
+
     def list_parent(self, parent):
-        # Leaf-chain traversal avoids assuming HFS Unicode collation equals Python.
-        current, visited, found = self.first, set(), []
+        # Scan from a parent-ID lower bound, then follow the leaf chain.
+        current, visited, found = self.parent_leaf(parent), set(), []
         while current:
             require(current not in visited and len(visited) < 200000, 'catalog leaf cycle/limit')
             visited.add(current)

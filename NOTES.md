@@ -1,3 +1,13 @@
+## 2026-11-06 System two-camera snapshots requested; stage3 pending CI/device
+
+USER latest priority: put existing TWO cameras inside system now (front IMX471 + tele S5K3M5), defer main/ultra. TELE5 actual readback logs/camera-native-tele5-20261106: 8 fresh completions, exposure1000/gain20/frame1656 verified, no CSI errors, export /private/var/tmp/in2020-tele-raw10-896803105.bin payload4118400 CRCb5b3414b, cleanup/SMMUrestore1. Host file+CRC verified; preview min62/max67 narrow range. USER visually confirmed picture normal; accept basic tele capture passed, brightness/color tuning remains. Front RAW8 already scene verified. Phone ROOT TWRP after readback.
+
+0145 in2020cam=3 adds /dev/in2020-camera exclusive-open finite snapshot ioctl sensor1/2 fixed plans, read64byteI20FRAME+RAW, CRC/stable/guard/full-cleanup gates. Failure blocks further hardware until reboot. Reuses one max6MB wired allocation+32KB tables only after exactSMMUrestore; never reuses uncertain mapping. Resets per-capture owned flags/front+tele clock/pin/profile selection. Stage2 legacy capture preserved. No automatic capture during system boot.
+
+UIKit panel injected ONLY into SpringBoard after hash-verified fixed /usr/local/lib/in2020-camera-ui-v1.dylib installation before launchd; existing compat injection preserved. Opens30sec after processstart, front/tele switch, manual take/refresh, collapse/reopen; independentCRC then downsampled grayscale with viewing-only contrast stretch. NOT continuous video/AVFoundation/stock Camera integration. Separate SDK CI in2020-camera-userland.yml + ASAN/UBSAN tests. tools/build-in2020-camera-system.py packages BOTH local plans/PHYops+signedUI. No modules/frames/firmware committed.
+
+Checks: nativeXNUheaders5cameraCcompilePASS,0145zero-fuzzPASS,cumulativePASS,hostRAW10/ABI/CRC/boundsPASS on BOTH actualfrontRAW8+TELE5 files. HFSparentIDindex optimization PASS syntheticfixture+realTELE5 read~3sec insteadof3min. Pending fullkernel/UIKitCI, package, temporaryphoneboot, actual systemwindow/switch/repeatedcapture. No systemUI/devicepass claimed yet.
+
 ## 2026-11-06 TELE5 temporary boot accepted; await manual FB return
 
 USER已完成 interpretedbuildcomplete;verified42279828601SUCCESS source19a6434da2b5a24874bb560f84e4bf942e3fdbe8. KernelSHAa53db64ad1c6dc7aa35218d03b832ad89b3c24f33459643da36f3a1e9d84143e matchesmanifest;0144present/noFAILEDhunks/newexposurestringpresent. Packaged builds/xnu-42279828601/in2020-native-tele5 --sensortele,600cmd imageSHA6c2741ebcdab5fd8aacaf22bcd23f441b4fc983eceb9a6aa6f1af31f258e91c4. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.513sec. boot-result.json saved. PHONE LEFT RUNNINGTELE5. ActualframeUNVERIFIED. Asyncaskedbrightscene/run1-2min/manualFBreturn+lastoutput.

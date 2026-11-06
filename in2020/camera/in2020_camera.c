@@ -64,6 +64,7 @@ static void peripheral(unsigned ppid) {
         ppid,apid,rd(cnfg,0x700+4*apid)&7,v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
 }
 extern void in2020_camera_capture(void);
+extern void cr_system_init(void);
 static void camera_thread(void *arg,__unused wait_result_t result) {
     if((uintptr_t)arg==2) {in2020_camera_capture();return;}
     printf("IN2020 CAMERA: stage1 front IMX471 slot2 CCI1/master1 PHY3; observe only\n");
@@ -95,6 +96,7 @@ void in2020_camera_init(void) {
     (void)PE_parse_boot_argn("in2020cam",&stage,sizeof(stage));
     if(!stage)return;
     started=true;
+    if(stage==3) {cr_system_init();return;}
     if(stage!=1 && stage!=2) {printf("IN2020 CAMERA: unsupported stage=%u\n",stage);return;}
     if(kernel_thread_start(camera_thread,(void *)(uintptr_t)stage,&thread)==KERN_SUCCESS)thread_deallocate(thread);
     else printf("IN2020 CAMERA: cannot start observer thread\n");

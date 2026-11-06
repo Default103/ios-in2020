@@ -10,14 +10,20 @@ static const char *rails[2]={"ldof7","ldof3"};
 static unsigned ppids[2]={0xb46,0xb42},millivolts[2]={1800,1056};
 static const uint8_t *plan;
 bool cr_sensor_plan_valid(void);
+unsigned cr_requested_sensor;
 bool cr_sensor_plan_valid(void) {
     DTEntry n;const void *p=NULL;unsigned length=0;
     if(SecureDTLookupEntry(NULL,"/in2020-camera",&n)!=kSuccess ||
-       SecureDTGetProperty(n,"front-plan",&p,&length)!=kSuccess)return false;
+       SecureDTGetProperty(n,cr_requested_sensor==1?"front-plan":cr_requested_sensor==2?"tele-plan":"front-plan",&p,&length)!=kSuccess)return false;
     if(cp_tele_plan(p,length)) {
         cr_config=(struct cr_configuration){2104,1560,2640,918,53,0x30d5,0,0x2d,2,0xac6e000,511,0x5038,0x5050,16,true};
         rails[1]="ldof4";ppids[1]=0xb43;
-    } else if(!cp_plan(p,length))return false;
+    } else {
+        if(!cp_plan(p,length))return false;
+        cr_config=(struct cr_configuration){2328,1748,2912,155,57,0x471,0x16,0x10,3,0xac70000,480,0x5054,0x506c,14,false};
+        rails[1]="ldof3";ppids[1]=0xb42;
+    }
+    saved=reset_taken=power_taken=false;rail_vote[0]=rail_vote[1]=false;
     plan=p;return true;
 }
 static bool pmic(unsigned ppid,unsigned offset,uint8_t *v) {return in2020_camera_pmic_read(ppid,offset,v);}
