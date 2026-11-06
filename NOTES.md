@@ -1,3 +1,9 @@
+## 2026-11-06 RAW2 temporary boot accepted; await manual FB return
+
+USER buildcomplete/start. Verified42132957983SUCCESS/sourcee2ff2f794681a93aa603a4d6e47ed1176fc8fd5e includes0133TCR2fix;downloadkernel/buildlog,patchpresent/noFAILEDhunks. KernelSHA706d07c7b5cefdf90d22ab597746c085658c9d661f8b56beca92ff4ee9dbde2d matchesmanifest. Packaged builds/xnu-42132957983/in2020-native-raw2 imageSHAc60cd8ad6b1837d31875a02ed35833ce204e9a12ab6b849d8c5124c90b031c87,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata ->FBuniqueKona/max805306368 ->temporaryfastbootbootOKAY0.514s. boot-result.json saved. PHONE LEFT RUNNING RAW2. Asyncaskedrun1-2min/manualFBreturn/screensymptoms. Actualframe/export/runtime UNVERIFIED.
+
+Next USERreturnFB->verifiedTWRPtemporaryboot->ADBwait60-90sec->NEWreadonly logs/camera-native-raw2-20261106. InspectCBwrite/readbackpass/fail,CSI/IFEreset/WMIRQ/sensorstop/cleanup/export. Ifsuccessful exactexportpath/error0/resid0 then tools/read-in2020-native-raw.py checksfilelength/CRC andwritesprivatehostRAW. No guessingimagefromIRQ. PreviousRAW1nativeID/212tablespassedbutTCR2mismatchbeforestream;noRAW1file.
+
 ## 2026-11-06 RAW1 actual failure identified; narrow TCR2 fix
 
 USER reports screen stopped ldof3enable0/noUI, returnedFB. VerifiedTWRPtempbootOKAY1.643s,ADBwithin60sec,no replug. Readonly logs/camera-native-raw1-20261106:335851bytes23flushnowrap SHA207cfc1cc2612b90af4a569eda3b1f745251c530ec8ade35bf3228b8a1e54413. Actualnative IMX471 ID0471matched, all212tables+geometrypassed (reachedDMA). Clocks ready. SMMUfreeSMR5/CB5,GFSR0; TCR2offset10 write38011read38071 failsstrictcompare, BEFOREPHY/CSI/stream. frameIRQ0/export0, noRAW. Sensorpowerdown/pinrestore1/BOBpreserved1,clockcleanup1,unpublishedCBmappingquarantined1. No nativecamera fault claimed beyond exactreadbackfailure. LaterlogexecSpringBoard/GPUcompleted241of241; visibleUIabsence is USERobservation, not kernelhalt atldof3. PhoneLEFT ROOT TWRP.
