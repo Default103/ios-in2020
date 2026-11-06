@@ -1,3 +1,9 @@
+## 2026-11-06 RAW8 temporary boot accepted; await manual FB return
+
+USER buildcomplete/starttest. Verified42229170609SUCCESS source54c2527a520da5e5c3fd33c711f2e1b40b23a393. Downloadkernel/buildlog;0139present/noFAILEDhunks. KernelSHAed9da9a9b0d72c234c07ac76723011b21f34ea7fb4213e70b882a986b9064cb6 matchesmanifest. builds/xnu-42229170609/in2020-native-raw8 imageSHA80cc15eec3399cb3bf99d0d43e27fb23d9b6a4be8bcdbfdd456b20cce0176a26,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.516sec. boot-result.json saved. PHONE LEFT RUNNING RAW8. Actualframe/exportUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+screensymptoms.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot,waitADB60-90sec then readonlyNEW logs/camera-native-raw8-20261106. InspectWMburst3readback/WMenable/sensorstream,CSIpackets/IFEWMcompletion,livefaultSYNR/FAR,cleanup/export. Ifexactexporterror0/resid0 retrieveexactnativepathwithtools/read-in2020-native-raw.py intoNEWprivatehostdir,checkCRC. PreviousRAW7passedPHYCSI/IFEresetbutburstfread3stoppedbeforestream. No frameclaimfromboot. VisibleUIissueunresolved. IfFBunknowncommand/getvarnotfound ->fastbootrebootbootloader thenreverifykona beforeTWRP.
+
 ## 2026-11-06 RAW7 reaches PHY/CSI/IFE; stops at lite burst-limit readback
 
 USERreturnedFBstillconsole. VerifiedTWRPtemporarybootOKAY1.648sec,ADBwithin60sec. Readonly logs/camera-native-raw7-20261106:190298bytes4flushnowrap SHA066390936db865e1ddf7dffe2a18e65f63bd4a51227920197438a48d4efbd34d. NativeID/tables/geometryPASS. 0138actualsubsetsuccess: SID800slot5 and840slot7accepted(S2CR305);801/841deniedexactrollback. verifiedroutes2/unmatchedfaultgate1,GFSR0. PHYup,CSIDversion20000001/IFEversion10000001,CSID+IFEresetPASS. ExactfailureWM0burstlimit1c64 wantedf got3 maskf,BEFOREWMenable/sensorstream. Noactualframe/packet0/IRQ0/export0. Sensor/pins/BOBcleanup1,clockcleanup1,SMMUrestored1 (notquarantine). PhoneLEFTROOT TWRP.
