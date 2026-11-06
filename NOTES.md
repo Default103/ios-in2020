@@ -1,3 +1,9 @@
+## 2026-11-06 TELE3 temporary boot accepted; await manual FB return
+
+USER buildcomplete. Verified42270685732SUCCESS source3ecb058a9f43c19f8d960ff3567c26113ddb9835. KernelSHA9c89ee1970a12faed4120df04ddc8a93c5530e72bbb182e82d73182109bf4089 matchesmanifest;0142present/noFAILEDhunks/newstableMIPIstringpresent. Packaged builds/xnu-42270685732/in2020-native-tele3 --sensortele,600cmd imageSHA29058d85bab015eed31acda14ffde9ed8cf2894c611bfacab8d6b9c780378e47. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.517sec. boot-result.json saved. PHONE LEFT RUNNINGTELE3. ActualframeUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+lastoutput.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot/waitADB60-90sec ->NEWreadonly logs/camera-native-tele3-20261106. InspectMIPIstableinheritedON/OFF+observations orphysicaltimeout,PLL/RCGroots,ldof4/telepins/ID30d5/971tables/CSI/WM/export. Successrequireshostfilelength/CRC+preview. Main+ultraCphytestsandthen systemviewfinderremainactivependingobjectives. DoNOTclaim3rearworkinguntilactualframesverified.
+
 ## 2026-11-06 TELE2 identifies transient MIPI guard failure; stable-read fix
 
 USERreturnedFBstillconsole. VerifiedTWRPtemporarybootOKAY1.642sec,ADBwithin60sec. Readonly logs/camera-native-tele2-20261106:349480bytes30flushnowrap SHAb721c54af39bfa615c00d8d0ea7160c547193c19b82eb3328d2151c9d58ae1af. ActualbranchesGCCb008/b04080000000,corevotePASS,GDSC22f001/ref0/PLL0=0; GDSCenabledf822f800/ref1010101. Exactstop MIPIrailguardrejected readable1/type4/VSET1200/en80/status87 (snapshotITSELFmeetsstrictONpredicate). Thereforeoneearliercheckfailedtransientlybutlatephysicalstatehealthy. Can'tassertSPMI/keyconcurrencycausefromthisalone. BeforeteleVIO/VDIG/ID/program/DMA. Coreoff0/clockcleanup1,frameIRQ0/export0. PhoneLEFTROOT TWRP.
