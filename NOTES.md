@@ -1,3 +1,9 @@
+## 2026-11-06 TELE2 temporary boot accepted; await manual FB return
+
+USER buildcomplete. Verified42265728377SUCCESS source04cb038e9d20c3d0c8922ca5a8fdc77d03745152. KernelSHAde9c6205dd0cf3a40f5f72299ef8b44843532452fc88d54a2798105dd7c8d02d matchesmanifest;0141present/noFAILEDhunks/newMIPIguardstringpresent. Packaged builds/xnu-42265728377/in2020-native-tele2 --sensortele,600cmd imageSHA82e6f933fca15fe0efcc8e56d5200bdd74be8e36dd4c3d7745e5d039280d6e48. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.508sec. boot-result.json saved. PHONE LEFT RUNNINGTELE2. ActualframeUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+lastoutput.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot/waitADB60-90sec ->NEWreadonly logs/camera-native-tele2-20261106. Inspectclockbranch/GDSCwait/MIPIphysicalreadbacks/PLL/RCGroot toidentifyexactTELE1silentfailure. IfpassescontinueID30d5/971tables/CSI/WM/export. Successrequireshostfilelength/CRC andpreview,notbootacceptance. Main+ultraCphytestsandthen systemviewfinderremainactivependingobjectives. No bypassofclockguards.
+
 ## 2026-11-06 TELE1 actual readback: clock preparation failed before sensor power/ID
 
 USERreturnedFBstillconsole. VerifiedTWRPtemporarybootOKAY1.651sec/ADBwithin60sec. Readonly logs/camera-native-tele1-20261106:432638bytes87flushnowrap SHA13ec6685f532612cc2fb1163c088ed06a601d9779e0f2f1c768a594244b4eb11. Profilecorrectsensor30d5/2104x1560/stride2640. CAMERAcoreon1result0, GDSC22f001/REFGEN0/PLL0=0, thenEXIT before"clocksready"/rail log/ID. Coreoffresult0,clockcleanup1,frameIRQ0/export0. NearbyIN2020KEYSreadfailedkey0; no claimcausation. EXACTclockexitbranchUNKNOWN dueinheritedsilentguards. No teleVIO/VDIGvotes/sensorprogram/PHY/CSI/DMA started. PhoneLEFTROOT TWRP.
