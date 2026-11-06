@@ -83,7 +83,27 @@ bool cr_dma_up(void) {
             }
         } else if(match==~0u) {match=i;old_smr=s;old_s2cr=c;}
     }
-    if(match==~0u) {printf("IN2020 RAW DMA: no invalid SMR available; existing entries untouched\n");return false;}
+    /* Invalid does not imply writable: RAW3 SMR5 silently ignored writes.
+     * Probe only invalid entries with VALID kept zero, immediately restore.
+     * No S2CR/CB changes until a writable slot is found; active streams untouched.
+     * Linux arm_smmu_test_smr_masks likewise tests fields while VALID is zero. */
+    match=~0u;
+    const uint32_t probe=(CAMERA_MASK<<16)|CAMERA_SID;
+    for(unsigned i=0;i<matches;++i) {
+        unsigned off=0x800+4*i;
+        uint32_t before=rd(smmu,off),route=rd(smmu,0xc00+4*i);
+        if(before==0xffffffff || route==0xffffffff)return false;
+        if(before>>31)continue;
+        wr(smmu,off,probe);uint32_t got=rd(smmu,off);
+        wr(smmu,off,before);uint32_t restored=rd(smmu,off);
+        printf("IN2020 RAW DMA: invalid SMR%u probe=%#x read=%#x restored=%d\n",i,probe,got,restored==before);
+        if(restored!=before || (got>>31) || rd(smmu,0xc00+4*i)!=route) {
+            quarantined=true;return false;
+        }
+        if(got==probe) {match=i;old_smr=before;old_s2cr=route;break;}
+        if(got!=before) {printf("IN2020 RAW DMA: unsupported SMR fields; restored, refusing\n");return false;}
+    }
+    if(match==~0u) {printf("IN2020 RAW DMA: no writable invalid SMR; no CB/route changes\n");return false;}
     printf("IN2020 RAW DMA: free SMR=%u; scanning %u context banks\n",match,contexts-stage2);
     for(unsigned i=stage2;i<contexts;++i) {
         if(used[i])continue;
