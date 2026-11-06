@@ -1,3 +1,9 @@
+## 2026-11-06 RAW3 temporary boot accepted; await manual FB return
+
+USER buildcomplete. Verified42209629818SUCCESS sourcea61c69e72d5ae4696509982b2794b8d1c23b83d3. Downloadkernel/buildlog;0134present/noFAILEDhunks. KernelSHA9194247c5fa8ee162b7f6f6039386c96ccda7ff6ac69e007b0195574c0874af5 matchesmanifest. builds/xnu-42209629818/in2020-native-raw3 imageSHAc960ce3977324f2b80113f1735a2d8f33c600c0a3c1e6b8df27308619d1f135b,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.510sec. boot-result.json saved. PHONE LEFT RUNNING RAW3, actualframe/exportUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+screensymptoms.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot,waitADB60-90sec then readonlyNEW logs/camera-native-raw3-20261106. InspectglobalASIDavailability/SCTLR0127/CSI/IFE/WMcompletion/cleanup/export. Ifexactexporterror0/resid0 retrieveexactnativepathwithtools/read-in2020-native-raw.py intoNEWprivatehostdir,checkCRC. PreviousRAW2failedBEFOREstream/noRAWfile. VisibleUIissueunresolved,presents0despitebackgroundGPU;doNOTclaimvisiblebootfromFBacceptance.
+
 ## 2026-11-06 RAW2 collected: SCTLR ASIDPNE mismatch; RAW3 fix
 
 USER samevisibleconsole/noiOSUI/returnedFB. VerifiedTWRPtempbootOKAY1.649sec,ADBwithin60sec. Readonly logs/camera-native-raw2-20261106:182806bytes4flushnowrap SHA f03ca195355d523e25e85dfcebe54ffad3952d52ec6bf948bc36aedfc20e1a80. NativeIMX471ID0471/tables/geometryPASS. 0133TCR2fixworks; nowCB5SCTLRwrite1127read0127 failsstrictcomparisonBEFOREpublishingstream/PHY/CSI. frameIRQ0/export0. Sensor/clockcleanup1;unpublishedCBretainedquarantine1. Backgroundbackboardd/GPU179completions,presents0; USERvisibleUIabsenceunresolved, doNOTclaimnormalvisibleboot. PhoneLEFTROOT TWRP. NoRAWfileexported,so noHFSframeextractionneeded.
