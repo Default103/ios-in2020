@@ -1,0 +1,11 @@
+--- a/bsd/dev/in2020_camera_sensor.c
++++ b/bsd/dev/in2020_camera_sensor.c
+@@ -24,7 +24,7 @@
+ static bool rail_state(unsigned i,bool on) {
+     uint8_t lo=0,hi=0,en=0,status=0,type=0,sub=0;
+     if(!pmic(ppids[i],4,&type) || !pmic(ppids[i],5,&sub) || type!=4 ||
+-       sub!=(i?0x6a:0x73) || !pmic(ppids[i],0x40,&lo) || !pmic(ppids[i],0x41,&hi) ||
++       sub!=(i?(cr_config.rear?0x6b:0x6a):0x73) || !pmic(ppids[i],0x40,&lo) || !pmic(ppids[i],0x41,&hi) ||
+        (unsigned)(lo|(hi<<8))!=millivolts[i] || !pmic(ppids[i],0x46,&en) ||
+        !pmic(ppids[i],8,&status))return false;
+     return !!(en&0x80)==on && (!on || (status&0xa0)==0x80);

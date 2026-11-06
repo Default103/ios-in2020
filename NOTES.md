@@ -1,3 +1,9 @@
+## 2026-11-06 TELE3 clocks PASS; measured L4 subtype6b corrects assumed6a
+
+USERreturnedFB. VerifiedTWRPtemporarybootOKAY1.647sec,ADBwithin60sec. Readonly logs/camera-native-tele3-20261106:339548bytes23flushnowrap SHA23420f394254d61cdf61a4dfa9d0c4ca56d6bcd401e9998ff14826fe2b2a85cd. MIPIstableinheritedONafter3observations; allGCC/CAMCC/PLL0/RCG/PHY2branchesPASSandclocksready. PhysicalvioL7b46type4sub73/VSET1800/en0. TeleVDIGL4b43type4sub6b/VSET1056/en0. EXACTstopbeforepins/railvotesbecauseoldrail_stateexpectsVDIGsub6a(frontL3identity)forbothprofiles. No sensorID/program/RAW. Sensorpowerdown1/BOBpreserved1,clockcleanup1,frameIRQ0/export0. PhoneLEFTROOT TWRP.
+
+0143 changesONLY expectedteleVDIGsub6b, keepsfrontL3sub6a/L7sub73 andalltype/VSET/en/statuschecks. MeasuredL4identitynotguess; nohardwarevoltage/modechange. NativeXNUsensorcompilePASS,0143zero-fuzzPASS,cumulativePASS. NeednewfullkernelTELE4. Main/ultraCphytestsandthen systemviewfinderstillpending;frontRAW8alreadyverified.
+
 ## 2026-11-06 TELE3 temporary boot accepted; await manual FB return
 
 USER buildcomplete. Verified42270685732SUCCESS source3ecb058a9f43c19f8d960ff3567c26113ddb9835. KernelSHA9c89ee1970a12faed4120df04ddc8a93c5530e72bbb182e82d73182109bf4089 matchesmanifest;0142present/noFAILEDhunks/newstableMIPIstringpresent. Packaged builds/xnu-42270685732/in2020-native-tele3 --sensortele,600cmd imageSHA29058d85bab015eed31acda14ffde9ed8cf2894c611bfacab8d6b9c780378e47. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.517sec. boot-result.json saved. PHONE LEFT RUNNINGTELE3. ActualframeUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+lastoutput.
