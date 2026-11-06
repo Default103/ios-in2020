@@ -11,10 +11,11 @@
 #include "in2020_camera_raw.h"
 #include "in2020_camera_plan.h"
 static vm_offset_t phy,csid,ife,gic;
-static const unsigned irqs[3]={480,500,501};
+static unsigned irqs[3]={480,500,501};
 static uint32_t irq_old[3];static unsigned irq_masked;
 static bool phy_active,csid_active,ife_active;
 static bool irqs_take(void) {
+    irqs[0]=cr_config.phy_irq;
     gic=ml_io_map(0x17a00000,0x10000);if(!gic)return false;
     for(unsigned i=0;i<3;++i) {
         unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
@@ -43,7 +44,7 @@ static bool phy_up(void) {
         unsigned at=cp32(p+8+i*8),value=cp32(p+12+i*8);
         if((at&3) || at>=0x1000 || value>255)return false;
     }
-    phy=ml_io_map(IN2020_CAMERA_PHY_BASE,0x2000);if(!phy)return false;phy_active=true;
+    phy=ml_io_map(cr_config.phy_base,0x2000);if(!phy)return false;phy_active=true;
     cr_write(phy,0x800,1);delay(5);cr_write(phy,0x800,0);delay(5);
     for(unsigned i=0;i<n;++i)cr_write(phy,cp32(p+8+i*8),cp32(p+12+i*8));
     for(unsigned i=0;i<11;++i) {cr_write(phy,0x82c+4*i,0);cr_write(phy,0x858+4*i,0xff);}
@@ -67,7 +68,7 @@ static bool paths_up(void) {
         cr_write(csid,0x78,1);cr_write(csid,0x80,1);
     }
     const uint32_t cfg0=(0x2bu<<16)|(0xfu<<12)|4u|3u;
-    if(!cr_put(csid,0x100,3u|(0x3210u<<4)|(3u<<20),~0u) || !cr_put(csid,0x104,0x41,~0u) ||
+    if(!cr_put(csid,0x100,3u|(0x3210u<<4)|(cr_config.phy<<20),~0u) || !cr_put(csid,0x104,0x41,~0u) ||
        !cr_put(csid,0x200,cfg0,~0u) || !cr_put(csid,0x204,2,~0u))return false;
     static const uint32_t rdi[][2]={{0x20c,0},{0x210,1},{0x214,0},{0x218,1},{0x224,0},{0x228,1},{0x22c,0},{0x230,1}};
     for(unsigned i=0;i<8;++i)if(!cr_put(csid,rdi[i][0],rdi[i][1],~0u))return false;
@@ -127,7 +128,7 @@ struct frame_header {char magic[8];uint32_t version,width,height,stride,bits,crc
 _Static_assert(sizeof(struct frame_header)==64,"RAW file ABI");
 static bool export_frame(uint32_t crc) {
     struct frame_header h={{'I','2','0','F','R','A','M','E'},1,CR_WIDTH,CR_HEIGHT,CR_STRIDE,10,crc,1,0,mach_absolute_time(),{0}};
-    char path[160];snprintf(path,sizeof(path),"/private/var/tmp/in2020-front-raw10-%llu.bin",h.time);
+    char path[160];snprintf(path,sizeof(path),"/private/var/tmp/in2020-%s-raw10-%llu.bin",cr_config.rear?"tele":"front",h.time);
     vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;
     int err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0600,0,&vp,ctx),resid=0;
     if(!err)err=vn_rdwr(UIO_WRITE,vp,(caddr_t)&h,sizeof(h),0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
@@ -139,8 +140,9 @@ static bool export_frame(uint32_t crc) {
 }
 void in2020_camera_capture(void) {
     bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false;
-    printf("IN2020 RAW: native one-frame IMX471 RAW10 %ux%u stride=%u; no TPG/recovery backend\n",CR_WIDTH,CR_HEIGHT,CR_STRIDE);
+
     if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return;}
+    printf("IN2020 RAW: native one-frame sensor=%#x RAW10 %ux%u stride=%u\n",cr_config.id,CR_WIDTH,CR_HEIGHT,CR_STRIDE);
     delay_for_interval(5,NSEC_PER_SEC); /* let existing input/power bring-up finish */
     if(!irqs_take())goto end;
     clocks=true;if(!cr_clocks_up())goto end;

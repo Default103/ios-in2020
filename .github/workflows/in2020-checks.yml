@@ -46,6 +46,8 @@ jobs:
           python3 tools/read-in2020-native-raw-test.py
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera/raw_plan_test.c -o raw-plan-test
           ./raw-plan-test
+          clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera/tele_plan_test.c -o tele-plan-test
+          ./tele-plan-test
           clang -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined in2020/camera/raw_arc_test.c -o raw-arc-test
           ./raw-arc-test
       - name: Test fixed camera probe packet ABI

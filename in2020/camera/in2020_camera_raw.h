@@ -6,9 +6,15 @@
 #include <kern/clock.h>
 #include <machine/machine_routines.h>
 #include "in2020_camera_board.h"
-#define CR_WIDTH 2328u
-#define CR_HEIGHT 1748u
-#define CR_STRIDE 2912u
+struct cr_configuration {
+    unsigned width,height,stride,init_count,mode_count,id,id_reg,slave,phy,phy_base,phy_irq;
+    unsigned mclk_cmd,mclk_branch,settle;
+    bool rear;
+};
+extern struct cr_configuration cr_config;
+#define CR_WIDTH (cr_config.width)
+#define CR_HEIGHT (cr_config.height)
+#define CR_STRIDE (cr_config.stride)
 #define CR_BYTES (CR_STRIDE*CR_HEIGHT)
 #define CR_IOVA 0x40000000u
 #define CR_FSR_FAULT 0xc00001feu

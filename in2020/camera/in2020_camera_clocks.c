@@ -39,18 +39,19 @@ static bool mipi_state(bool on) {
 bool cr_mclk(bool on) {
     if(!on) {
         if(!mclk_owned)return true;
-        bool ok=cr_put(cc,0x506c,cr_read(cc,0x506c)&~1u,1) && cr_wait(cc,0x506c,1u<<31,1u<<31,2000);
-        ok=cr_put(cc,0x5058,mclk_cfg,0x371f)&&ok;ok=update(0x5054)&&ok;
+        bool ok=cr_put(cc,cr_config.mclk_branch,cr_read(cc,cr_config.mclk_branch)&~1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,1u<<31,2000);
+        ok=cr_put(cc,(cr_config.mclk_cmd+4),mclk_cfg,0x371f)&&ok;ok=update(cr_config.mclk_cmd)&&ok;
         if(ok)mclk_owned=false;return ok;
     }
     if(!cc)return false;
-    mclk_cfg=cr_read(cc,0x5058);mclk_branch=cr_read(cc,0x506c);
-    if(mclk_cfg==0xffffffff || mclk_branch==0xffffffff || (mclk_branch&1) || (cr_read(cc,0x5054)&1))return false;
+    mclk_cfg=cr_read(cc,(cr_config.mclk_cmd+4));mclk_branch=cr_read(cc,cr_config.mclk_branch);
+    if(mclk_cfg==0xffffffff || mclk_branch==0xffffffff || (mclk_branch&1) || (cr_read(cc,cr_config.mclk_cmd)&1))return false;
     mclk_owned=true;
-    return cr_put(cc,0x5058,(mclk_cfg&~0x371fu)|1u,0x371f) && update(0x5054) &&
-        cr_put(cc,0x506c,mclk_branch|1u,1) && cr_wait(cc,0x506c,1u<<31,0,2000);
+    return cr_put(cc,(cr_config.mclk_cmd+4),(mclk_cfg&~0x371fu)|1u,0x371f) && update(cr_config.mclk_cmd) &&
+        cr_put(cc,cr_config.mclk_branch,mclk_branch|1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,0,2000);
 }
 bool cr_clocks_up(void) {
+    if(cr_config.rear) {roots[3].cmd=0x6040;branches[6].offset=0x605c;branches[7].offset=0x6058;}
     arc_owned=true;if(in2020_rpmh_camera_arc(true))return false;
     gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
     cc=ml_io_map(IN2020_CAMERA_CAMCC,IN2020_CAMERA_CAMCC_SIZE);refgen=ml_io_map(0x088e7000,0x1000);

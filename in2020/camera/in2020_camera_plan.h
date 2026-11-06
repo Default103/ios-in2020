@@ -29,6 +29,30 @@ static inline bool cp_plan(const uint8_t *p,size_t bytes) {
     for(unsigned i=0;i<11;++i)if(cp_value(p+64+155*8,57,regs[i])!=values[i])return false;
     return true;
 }
+/* Pinned S5K3M5 mode3, preserves indirect 16-bit writes in their order. */
+static inline bool cp_tele_plan(const uint8_t *p,unsigned bytes) {
+    static const uint8_t magic[8]={'I','2','0','R','E','A','R','1'};
+    static const uint32_t f[13]={1,3,918,53,0x30d5,0x2d,4,0x3210,16,2104,1560,10,0};
+    if(!p || bytes!=64+971*12)return false;
+    for(unsigned i=0;i<8;++i)if(p[i]!=magic[i])return false;
+    for(unsigned i=0;i<13;++i)if(cp32(p+8+i*4)!=f[i])return false;
+    if(cp32(p+60)!=cp_crc(p+64,971*12))return false;
+    for(unsigned i=0;i<971;++i) {
+        const uint8_t *r=p+64+i*12;unsigned a=cp16(r),v=cp16(r+2),w=r[4];
+        if((w!=1 && w!=2) || (w==1 && v>255) || r[5] || cp16(r+6) || cp32(r+8)>100000 || a==0x100)return false;
+        if(a>=0xa00 && a<=0xaff && !(i<918 && a==0xa02 && w==2 && v==0x7800))return false;
+    }
+    const unsigned regs[4]={0x34c,0x34e,0x342,0x340},values[4]={2104,1560,4848,1656};
+    for(unsigned j=0;j<4;++j) {
+        bool found=false;
+        for(unsigned i=918;i<971;++i) {
+            const uint8_t *r=p+64+i*12;
+            if(cp16(r)==regs[j]) {if(r[4]!=2 || cp16(r+2)!=values[j])return false;found=true;}
+        }
+        if(!found)return false;
+    }
+    return true;
+}
 /* ARM IHI0062D.c 16.5.39: TCR2[6:5] are TBI1/TBI0. They only
  * affect full-width tagged ATS addresses; our DMA IOVAs are untagged 32-bit.
  * IN2020 CB5 reads these two bits set. Check every other bit exactly.

@@ -45,7 +45,7 @@ static bool read_byte(unsigned apid,unsigned reg,uint8_t *out) {
 }
 bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out);
 bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out) {
-    if(!out || (ppid!=0xb42 && ppid!=0xb46 && ppid!=0x5a0 && ppid!=0x148) ||
+    if(!out || (ppid!=0xb42 && ppid!=0xb43 && ppid!=0xb46 && ppid!=0x5a0 && ppid!=0x148) ||
        (reg!=4 && reg!=5 && reg!=8 && reg!=0x40 && reg!=0x41 && reg!=0x45 && reg!=0x46))return false;
     if(!core) {
         core=ml_io_map(0xc440000,0x2000);cnfg=ml_io_map(0xc40a000,0x1000);observer=ml_io_map(0xe600000,0x10000);

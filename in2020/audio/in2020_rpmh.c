@@ -398,7 +398,7 @@ out:
 int in2020_rpmh_camera_vrm(const char *,bool);
 int in2020_rpmh_camera_arc(bool);
 int in2020_rpmh_camera_vrm(const char *name,bool on) {
-    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
+    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof4") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
     for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
         if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
     }

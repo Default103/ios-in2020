@@ -132,7 +132,7 @@ def decode_frame(blob):
     require(len(blob) >= 64, 'short frame header')
     magic, version, w, h, stride, bits, crc, flags, reserved, time, r0, r1 = struct.unpack_from('<8s8I3Q', blob)
     require(magic == b'I20FRAME' and version == 1, 'unknown native frame format')
-    require((w, h, stride, bits, flags, reserved, r0, r1) == (2328,1748,2912,10,1,0,0,0), 'unexpected frame metadata')
+    require((w,h,stride) in ((2328,1748,2912),(2104,1560,2640)) and (bits,flags,reserved,r0,r1)==(10,1,0,0,0), 'unexpected frame metadata')
     raw = blob[64:]
     require(len(raw) == stride*h and zlib.crc32(raw) == crc, 'frame length/CRC mismatch')
     return raw, dict(width=w, height=h, stride=stride, bits=bits, crc32=f'{crc:08x}', capture_time=time,
@@ -181,13 +181,13 @@ def main():
     p.add_argument('--path', required=True, help='Exact successful native export path from kernel log')
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
-    require(a.path.startswith('/private/var/tmp/in2020-front-raw10-') and
-            a.path.endswith('.bin') and a.path.rsplit('/',1)[1][19:-4].isdigit(), 'unexpected native export path')
+    require(any(a.path.startswith('/private/var/tmp/in2020-'+sensor+'-raw10-') for sensor in ('front','tele')) and
+            a.path.endswith('.bin') and a.path.rsplit('-',1)[1][:-4].isdigit(), 'unexpected native export path')
     require(not a.out.exists(), 'output already exists')
     reader = ADBRead(a.adb, a.serial)
     volume = HFS(reader, reader.capacity)
     fork = volume.lookup(a.path)
-    require(fork[0] == 64+2912*1748, 'unexpected native file size')
+    require(fork[0] in (64+2912*1748,64+2640*1560), 'unexpected native file size')
     blob = volume.fread(fork, 0, fork[0])
     raw, metadata = decode_frame(blob)
     a.out.mkdir(parents=True)

@@ -1,0 +1,265 @@
+--- a/bsd/dev/in2020_camera.c
++++ b/bsd/dev/in2020_camera.c
+@@ -45,7 +45,7 @@
+ }
+ bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out);
+ bool in2020_camera_pmic_read(unsigned ppid,unsigned reg,uint8_t *out) {
+-    if(!out || (ppid!=0xb42 && ppid!=0xb46 && ppid!=0x5a0 && ppid!=0x148) ||
++    if(!out || (ppid!=0xb42 && ppid!=0xb43 && ppid!=0xb46 && ppid!=0x5a0 && ppid!=0x148) ||
+        (reg!=4 && reg!=5 && reg!=8 && reg!=0x40 && reg!=0x41 && reg!=0x45 && reg!=0x46))return false;
+     if(!core) {
+         core=ml_io_map(0xc440000,0x2000);cnfg=ml_io_map(0xc40a000,0x1000);observer=ml_io_map(0xe600000,0x10000);
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -11,10 +11,11 @@
+ #include "in2020_camera_raw.h"
+ #include "in2020_camera_plan.h"
+ static vm_offset_t phy,csid,ife,gic;
+-static const unsigned irqs[3]={480,500,501};
++static unsigned irqs[3]={480,500,501};
+ static uint32_t irq_old[3];static unsigned irq_masked;
+ static bool phy_active,csid_active,ife_active;
+ static bool irqs_take(void) {
++    irqs[0]=cr_config.phy_irq;
+     gic=ml_io_map(0x17a00000,0x10000);if(!gic)return false;
+     for(unsigned i=0;i<3;++i) {
+         unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
+@@ -43,7 +44,7 @@
+         unsigned at=cp32(p+8+i*8),value=cp32(p+12+i*8);
+         if((at&3) || at>=0x1000 || value>255)return false;
+     }
+-    phy=ml_io_map(IN2020_CAMERA_PHY_BASE,0x2000);if(!phy)return false;phy_active=true;
++    phy=ml_io_map(cr_config.phy_base,0x2000);if(!phy)return false;phy_active=true;
+     cr_write(phy,0x800,1);delay(5);cr_write(phy,0x800,0);delay(5);
+     for(unsigned i=0;i<n;++i)cr_write(phy,cp32(p+8+i*8),cp32(p+12+i*8));
+     for(unsigned i=0;i<11;++i) {cr_write(phy,0x82c+4*i,0);cr_write(phy,0x858+4*i,0xff);}
+@@ -67,7 +68,7 @@
+         cr_write(csid,0x78,1);cr_write(csid,0x80,1);
+     }
+     const uint32_t cfg0=(0x2bu<<16)|(0xfu<<12)|4u|3u;
+-    if(!cr_put(csid,0x100,3u|(0x3210u<<4)|(3u<<20),~0u) || !cr_put(csid,0x104,0x41,~0u) ||
++    if(!cr_put(csid,0x100,3u|(0x3210u<<4)|(cr_config.phy<<20),~0u) || !cr_put(csid,0x104,0x41,~0u) ||
+        !cr_put(csid,0x200,cfg0,~0u) || !cr_put(csid,0x204,2,~0u))return false;
+     static const uint32_t rdi[][2]={{0x20c,0},{0x210,1},{0x214,0},{0x218,1},{0x224,0},{0x228,1},{0x22c,0},{0x230,1}};
+     for(unsigned i=0;i<8;++i)if(!cr_put(csid,rdi[i][0],rdi[i][1],~0u))return false;
+@@ -127,7 +128,7 @@
+ _Static_assert(sizeof(struct frame_header)==64,"RAW file ABI");
+ static bool export_frame(uint32_t crc) {
+     struct frame_header h={{'I','2','0','F','R','A','M','E'},1,CR_WIDTH,CR_HEIGHT,CR_STRIDE,10,crc,1,0,mach_absolute_time(),{0}};
+-    char path[160];snprintf(path,sizeof(path),"/private/var/tmp/in2020-front-raw10-%llu.bin",h.time);
++    char path[160];snprintf(path,sizeof(path),"/private/var/tmp/in2020-%s-raw10-%llu.bin",cr_config.rear?"tele":"front",h.time);
+     vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;
+     int err=vnode_open(path,O_CREAT|O_EXCL|FWRITE|O_NOFOLLOW,0600,0,&vp,ctx),resid=0;
+     if(!err)err=vn_rdwr(UIO_WRITE,vp,(caddr_t)&h,sizeof(h),0,UIO_SYSSPACE,IO_NOAUTH|IO_SYNC,vfs_context_ucred(ctx),&resid,vfs_context_proc(ctx));
+@@ -139,8 +140,9 @@
+ }
+ void in2020_camera_capture(void) {
+     bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false;
+-    printf("IN2020 RAW: native one-frame IMX471 RAW10 %ux%u stride=%u; no TPG/recovery backend\n",CR_WIDTH,CR_HEIGHT,CR_STRIDE);
++
+     if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return;}
++    printf("IN2020 RAW: native one-frame sensor=%#x RAW10 %ux%u stride=%u\n",cr_config.id,CR_WIDTH,CR_HEIGHT,CR_STRIDE);
+     delay_for_interval(5,NSEC_PER_SEC); /* let existing input/power bring-up finish */
+     if(!irqs_take())goto end;
+     clocks=true;if(!cr_clocks_up())goto end;
+--- a/bsd/dev/in2020_camera_clocks.c
++++ b/bsd/dev/in2020_camera_clocks.c
+@@ -39,18 +39,19 @@
+ bool cr_mclk(bool on) {
+     if(!on) {
+         if(!mclk_owned)return true;
+-        bool ok=cr_put(cc,0x506c,cr_read(cc,0x506c)&~1u,1) && cr_wait(cc,0x506c,1u<<31,1u<<31,2000);
+-        ok=cr_put(cc,0x5058,mclk_cfg,0x371f)&&ok;ok=update(0x5054)&&ok;
++        bool ok=cr_put(cc,cr_config.mclk_branch,cr_read(cc,cr_config.mclk_branch)&~1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,1u<<31,2000);
++        ok=cr_put(cc,(cr_config.mclk_cmd+4),mclk_cfg,0x371f)&&ok;ok=update(cr_config.mclk_cmd)&&ok;
+         if(ok)mclk_owned=false;return ok;
+     }
+     if(!cc)return false;
+-    mclk_cfg=cr_read(cc,0x5058);mclk_branch=cr_read(cc,0x506c);
+-    if(mclk_cfg==0xffffffff || mclk_branch==0xffffffff || (mclk_branch&1) || (cr_read(cc,0x5054)&1))return false;
++    mclk_cfg=cr_read(cc,(cr_config.mclk_cmd+4));mclk_branch=cr_read(cc,cr_config.mclk_branch);
++    if(mclk_cfg==0xffffffff || mclk_branch==0xffffffff || (mclk_branch&1) || (cr_read(cc,cr_config.mclk_cmd)&1))return false;
+     mclk_owned=true;
+-    return cr_put(cc,0x5058,(mclk_cfg&~0x371fu)|1u,0x371f) && update(0x5054) &&
+-        cr_put(cc,0x506c,mclk_branch|1u,1) && cr_wait(cc,0x506c,1u<<31,0,2000);
++    return cr_put(cc,(cr_config.mclk_cmd+4),(mclk_cfg&~0x371fu)|1u,0x371f) && update(cr_config.mclk_cmd) &&
++        cr_put(cc,cr_config.mclk_branch,mclk_branch|1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,0,2000);
+ }
+ bool cr_clocks_up(void) {
++    if(cr_config.rear) {roots[3].cmd=0x6040;branches[6].offset=0x605c;branches[7].offset=0x6058;}
+     arc_owned=true;if(in2020_rpmh_camera_arc(true))return false;
+     gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
+     cc=ml_io_map(IN2020_CAMERA_CAMCC,IN2020_CAMERA_CAMCC_SIZE);refgen=ml_io_map(0x088e7000,0x1000);
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -10,7 +10,7 @@
+ #define CAMERA_SID 0x800u
+ #define CAMERA_MASK 0x441u /* exactly the eight FDT IFE SIDs */
+ #define ALLOC_BYTES ((CR_BYTES+8192u+16383u)&~16383u)
+-_Static_assert(ALLOC_BYTES<=3u*512u*4096u,"three 4K leaf tables bound");
++
+ static vm_offset_t smmu,cb,gr1,buffer,tables;
+ static unsigned match,context;
+ static unsigned slots[4];
+@@ -60,6 +60,7 @@
+     return true;
+ }
+ bool cr_dma_up(void) {
++    if(ALLOC_BYTES>3u*512u*4096u)return false;
+     smmu=ml_io_map(0x15000000,0x100000);
+     if(!smmu)return false;
+     uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
+--- a/bsd/dev/in2020_camera_plan.h
++++ b/bsd/dev/in2020_camera_plan.h
+@@ -29,6 +29,30 @@
+     for(unsigned i=0;i<11;++i)if(cp_value(p+64+155*8,57,regs[i])!=values[i])return false;
+     return true;
+ }
++/* Pinned S5K3M5 mode3, preserves indirect 16-bit writes in their order. */
++static inline bool cp_tele_plan(const uint8_t *p,unsigned bytes) {
++    static const uint8_t magic[8]={'I','2','0','R','E','A','R','1'};
++    static const uint32_t f[13]={1,3,918,53,0x30d5,0x2d,4,0x3210,16,2104,1560,10,0};
++    if(!p || bytes!=64+971*12)return false;
++    for(unsigned i=0;i<8;++i)if(p[i]!=magic[i])return false;
++    for(unsigned i=0;i<13;++i)if(cp32(p+8+i*4)!=f[i])return false;
++    if(cp32(p+60)!=cp_crc(p+64,971*12))return false;
++    for(unsigned i=0;i<971;++i) {
++        const uint8_t *r=p+64+i*12;unsigned a=cp16(r),v=cp16(r+2),w=r[4];
++        if((w!=1 && w!=2) || (w==1 && v>255) || r[5] || cp16(r+6) || cp32(r+8)>100000 || a==0x100)return false;
++        if(a>=0xa00 && a<=0xaff && !(i<918 && a==0xa02 && w==2 && v==0x7800))return false;
++    }
++    const unsigned regs[4]={0x34c,0x34e,0x342,0x340},values[4]={2104,1560,4848,1656};
++    for(unsigned j=0;j<4;++j) {
++        bool found=false;
++        for(unsigned i=918;i<971;++i) {
++            const uint8_t *r=p+64+i*12;
++            if(cp16(r)==regs[j]) {if(r[4]!=2 || cp16(r+2)!=values[j])return false;found=true;}
++        }
++        if(!found)return false;
++    }
++    return true;
++}
+ /* ARM IHI0062D.c 16.5.39: TCR2[6:5] are TBI1/TBI0. They only
+  * affect full-width tagged ATS addresses; our DMA IOVAs are untagged 32-bit.
+  * IN2020 CB5 reads these two bits set. Check every other bit exactly.
+--- a/bsd/dev/in2020_camera_raw.h
++++ b/bsd/dev/in2020_camera_raw.h
+@@ -6,9 +6,15 @@
+ #include <kern/clock.h>
+ #include <machine/machine_routines.h>
+ #include "in2020_camera_board.h"
+-#define CR_WIDTH 2328u
+-#define CR_HEIGHT 1748u
+-#define CR_STRIDE 2912u
++struct cr_configuration {
++    unsigned width,height,stride,init_count,mode_count,id,id_reg,slave,phy,phy_base,phy_irq;
++    unsigned mclk_cmd,mclk_branch,settle;
++    bool rear;
++};
++extern struct cr_configuration cr_config;
++#define CR_WIDTH (cr_config.width)
++#define CR_HEIGHT (cr_config.height)
++#define CR_STRIDE (cr_config.stride)
+ #define CR_BYTES (CR_STRIDE*CR_HEIGHT)
+ #define CR_IOVA 0x40000000u
+ #define CR_FSR_FAULT 0xc00001feu
+--- a/bsd/dev/in2020_camera_sensor.c
++++ b/bsd/dev/in2020_camera_sensor.c
+@@ -2,17 +2,22 @@
+ #include <pexpert/device_tree.h>
+ #include "in2020_camera_raw.h"
+ #include "in2020_camera_plan.h"
++struct cr_configuration cr_config={2328,1748,2912,155,57,0x471,0x16,0x10,3,0xac70000,480,0x5054,0x506c,14,false};
+ static vm_offset_t pins[5];
+ static uint32_t cfg[5],latch[5];
+ static bool saved,rail_vote[2],reset_taken,power_taken;
+-static const char *const rails[2]={"ldof7","ldof3"};
+-static const unsigned ppids[2]={0xb46,0xb42},millivolts[2]={1800,1056};
++static const char *rails[2]={"ldof7","ldof3"};
++static unsigned ppids[2]={0xb46,0xb42},millivolts[2]={1800,1056};
+ static const uint8_t *plan;
+ bool cr_sensor_plan_valid(void);
+ bool cr_sensor_plan_valid(void) {
+     DTEntry n;const void *p=NULL;unsigned length=0;
+     if(SecureDTLookupEntry(NULL,"/in2020-camera",&n)!=kSuccess ||
+-       SecureDTGetProperty(n,"front-plan",&p,&length)!=kSuccess || !cp_plan(p,length))return false;
++       SecureDTGetProperty(n,"front-plan",&p,&length)!=kSuccess)return false;
++    if(cp_tele_plan(p,length)) {
++        cr_config=(struct cr_configuration){2104,1560,2640,918,53,0x30d5,0,0x2d,2,0xac6e000,511,0x5038,0x5050,16,true};
++        rails[1]="ldof4";ppids[1]=0xb43;
++    } else if(!cp_plan(p,length))return false;
+     plan=p;return true;
+ }
+ static bool pmic(unsigned ppid,unsigned offset,uint8_t *v) {return in2020_camera_pmic_read(ppid,offset,v);}
+@@ -36,10 +41,17 @@
+     return cr_put(pins[i],0,(cfg[i]&~0x3ffu)|configuration,0x3ff) && !!(cr_read(pins[i],4)&2u)==high;
+ }
+ bool cr_sensor_up(void) {
++    for(unsigned i=0;i<2;++i) {
++        uint8_t lo=0,hi=0,en=0,type=0,sub=0;
++        (void)pmic(ppids[i],4,&type);(void)pmic(ppids[i],5,&sub);(void)pmic(ppids[i],0x40,&lo);(void)pmic(ppids[i],0x41,&hi);(void)pmic(ppids[i],0x46,&en);
++        printf("IN2020 RAW: rail %s PPID=%#x type=%#x sub=%#x mv=%u en=%#x\n",rails[i],ppids[i],type,sub,lo|(hi<<8),en);
++    }
+     if(!plan || !bob_ready() || !rail_state(0,false) || !rail_state(1,false))return false;
+     for(unsigned i=0;i<5;++i) {
+-        pins[i]=ml_io_map(in2020_camera_pins[i].base,0x1000);if(!pins[i])return false;
++        static const unsigned tele_pins[5]={0xf960000,0xf55a000,0xf18b000,0xf969000,0xf96a000};
++        pins[i]=ml_io_map(cr_config.rear?tele_pins[i]:in2020_camera_pins[i].base,0x1000);if(!pins[i])return false;
+         cfg[i]=cr_read(pins[i],0);latch[i]=cr_read(pins[i],4)&2;
++        printf("IN2020 RAW: sensor pin%u cfg=%#x latch=%#x\n",i,cfg[i],latch[i]);
+         if(cfg[i]!=1 || latch[i])return false;
+     }
+     saved=true;reset_taken=true;
+@@ -89,10 +101,10 @@
+     return bit(!more,&b);
+ }
+ static bool transfer(unsigned reg,const uint8_t *v,unsigned n,uint8_t *in,unsigned count) {
+-    bool ok=start() && write_byte(0x20) && write_byte((uint8_t)(reg>>8)) && write_byte((uint8_t)reg);
++    bool ok=start() && write_byte((uint8_t)(cr_config.slave<<1)) && write_byte((uint8_t)(reg>>8)) && write_byte((uint8_t)reg);
+     for(unsigned i=0;ok && i<n;++i)ok=write_byte(v[i]);
+     if(ok && count) {
+-        ok=start() && write_byte(0x21);
++        ok=start() && write_byte((uint8_t)((cr_config.slave<<1)|1));
+         for(unsigned i=0;ok && i<count;++i)ok=read_byte(in+i,i+1<count);
+     }
+     return stop() && ok;
+@@ -100,18 +112,21 @@
+ bool cr_sensor_program(void) {
+     uint8_t id[2]={0};bool matched=false;
+     for(unsigned n=0;n<20;++n) {
+-        if(transfer(0x16,NULL,0,id,2) && id[0]==4 && id[1]==0x71) {matched=true;break;}
++        if(transfer(cr_config.id_reg,NULL,0,id,2) && ((id[0]<<8)|id[1])==cr_config.id) {matched=true;break;}
+         delay_for_interval(2,NSEC_PER_MSEC);
+     }
+-    printf("IN2020 RAW: native IMX471 ID=%#x matched=%d\n",(id[0]<<8)|id[1],matched);
++    printf("IN2020 RAW: native sensor=%#x ID=%#x matched=%d\n",cr_config.id,(id[0]<<8)|id[1],matched);
+     if(!matched)return false;
+-    for(unsigned i=0;i<212;++i) {
+-        const uint8_t *r=plan+64+i*8;
+-        if(!transfer(cp16(r),r+2,1,NULL,0)) {printf("IN2020 RAW: sensor table failed row=%u addr=%#x\n",i,cp16(r));return false;}
+-        if(cp32(r+4))delay(cp32(r+4));
++    for(unsigned i=0;i<cr_config.init_count+cr_config.mode_count;++i) {
++        const uint8_t *r=plan+64+i*(cr_config.rear?12:8);
++        uint8_t data[2];unsigned bytes=1,wait=cp32(r+4);
++        if(cr_config.rear) {bytes=r[4];wait=cp32(r+8);unsigned v=cp16(r+2);data[0]=(uint8_t)(bytes==2?v>>8:v);data[1]=(uint8_t)v;}
++        else data[0]=r[2];
++        if(!transfer(cp16(r),data,bytes,NULL,0)) {printf("IN2020 RAW: sensor table failed row=%u addr=%#x\n",i,cp16(r));return false;}
++        if(wait)delay(wait);
+     }
+     /* Independently read back output geometry/format before enabling CSI DMA. */
+-    const unsigned regs[3]={0x112,0x34c,0x34e},wanted[3]={0x0a0a,2328,1748};
++    const unsigned regs[3]={cr_config.rear?0x136:0x112,0x34c,0x34e},wanted[3]={cr_config.rear?0x1333:0x0a0a,CR_WIDTH,CR_HEIGHT};
+     for(unsigned i=0;i<3;++i)if(!transfer(regs[i],NULL,0,id,2) || ((id[0]<<8)|id[1])!=wanted[i])return false;
+     return true;
+ }
+--- a/bsd/dev/in2020_rpmh.c
++++ b/bsd/dev/in2020_rpmh.c
+@@ -398,7 +398,7 @@
+ int in2020_rpmh_camera_vrm(const char *,bool);
+ int in2020_rpmh_camera_arc(bool);
+ int in2020_rpmh_camera_vrm(const char *name,bool on) {
+-    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
++    if(!name || (strcmp(name,"ldof3") && strcmp(name,"ldof4") && strcmp(name,"ldof7") && strcmp(name,"ldoa9")))return EINVAL;
+     for(unsigned wait=0;__atomic_exchange_n(&rh_lock,1,__ATOMIC_ACQUIRE);++wait) {
+         if(wait>=100)return EBUSY;delay_for_interval(1,NSEC_PER_MSEC);
+     }

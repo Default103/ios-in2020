@@ -88,3 +88,13 @@ no ECC/CRC errors, and hardware cleanup and owned SMMU restoration passed.
 producing an uncalibrated grayscale mosaic and a separately labeled display
 stretch. Actual frame data remains private. Color, exposure control, live
 preview, Camera app integration and the visible iOS startup issue remain open.
+
+
+Rear-camera work starts with S5K3M5 mode3, 2104x1560 RAW10. The kernel
+selects the validated private tele profile from ADT and preserves per-command
+8/16-bit widths and indirect-write order. `build-in2020-camera-raw.py
+--sensor tele` packages this profile; front remains the default. Separate
+readback checks still gate success. The tele profile has compiled and passed
+host checks but has not yet captured a native frame. IMX689 MP and IMX586
+plans have been checked offline; their C-PHY hardware path remains pending.
+System viewfinder integration follows the three rear-camera tests.

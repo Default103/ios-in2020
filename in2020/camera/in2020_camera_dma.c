@@ -10,7 +10,7 @@ extern uint64_t kvtophys(vm_offset_t);
 #define CAMERA_SID 0x800u
 #define CAMERA_MASK 0x441u /* exactly the eight FDT IFE SIDs */
 #define ALLOC_BYTES ((CR_BYTES+8192u+16383u)&~16383u)
-_Static_assert(ALLOC_BYTES<=3u*512u*4096u,"three 4K leaf tables bound");
+
 static vm_offset_t smmu,cb,gr1,buffer,tables;
 static unsigned match,context;
 static unsigned slots[4];
@@ -60,6 +60,7 @@ static bool global_unchanged(void) {
     return true;
 }
 bool cr_dma_up(void) {
+    if(ALLOC_BYTES>3u*512u*4096u)return false;
     smmu=ml_io_map(0x15000000,0x100000);
     if(!smmu)return false;
     uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
