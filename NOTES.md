@@ -1,3 +1,11 @@
+## 2026-11-06 SYSTEM CAMERA1 temporary boot accepted; await actual UI/two-camera test
+
+USER connected/buildcomplete. Verified kernel42300548139SUCCESS head89f9e2394a165d37e622a030e214caffb85b7f3a; SHA032d01cbe63c461af79c5a1e9db50f1d6b10f640917a517fe629e805882be1e0 matchesmanifest;0145+0146present/noFAILEDhunks/device+injectionstringspresent. UI42300548393SUCCESS SHAe94a40c9714a7af4e7a3e12296d9125623cd889783f59bb52f8bd9f8868657b2 matchesmanifest; SDKsigned/strictverify+ASAN/UBSANpassed. Fullhost/QEMU42300651597SUCCESS (QEMU consoleonly,NOTphonecamera validation).
+
+Packaged builds/xnu-42300548139/in2020-system-camera1/in2020-ios16-camera-system-boot.img SHA c483dca157cc6377ceb2084f9ca55d84dc4b20f669484a734e15713f628ff29c size18731008/stage3/600cmd BOTHlocalplans+PHYops+UI; noADSP. ReadonlyTWRPHFSchecked/usr/local/lib root-owned0755 andUIv1targetabsent; ROOT3.7unique/unmounteduserdata ->FBuniqueKona/max805306368 ->temporaryfastbootbootOKAY0.515s. boot-result.json saved. PHONE LEFT RUNNING SYSTEM CAMERA1. Installation/UI rendering/snapshot/switch ondevice NOTyetverified.
+
+NextUSERtest: afterSpringBoardstartup+30sec panelshouldappear; fronttake/refresh twice ->tele take ->switchbackfronttake, reportimages/errors; panelcollapse/reopenavailable. This is MANUAL grey snapshots, NOTcontinuousvideo/AVFoundation. Ifstucklog/noUIafter~2min, manualFBreturn+lastline, thenverifiedTWRPtemporaryboot/newreadonly logs/camera-system1-20261106 (or newdatedsuffix). Inspectinstallationerror/ready,SpringBoardDYLD/exception/windowvisible,UIioctlcallstatus+nativecapturecleanup/SMMUrestore, frameCRC. NoverifiedremoteFBreturn. DoNOTclaimactualsystemtestpassedfrombootacceptance.
+
 ## 2026-11-06 Stage3 UI build correction and bounded mapping reuse
 
 Initial source d718c4b: kernel42286298717 inprogress; UI42286298464 failed ONLY -Wenum-conversion at CGImageCreate alpha argument, ASAN/UBSAN tests PASS. Explicit CGBitmapInfo cast fixes SDK18.5 warning. Unrelated genericgraphics42286298161 cancelled (workflow-filepath triggered); no graphics source changes.
