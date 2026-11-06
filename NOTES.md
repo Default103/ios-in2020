@@ -1,3 +1,9 @@
+## 2026-11-06 RAW7 reaches PHY/CSI/IFE; stops at lite burst-limit readback
+
+USERreturnedFBstillconsole. VerifiedTWRPtemporarybootOKAY1.648sec,ADBwithin60sec. Readonly logs/camera-native-raw7-20261106:190298bytes4flushnowrap SHA066390936db865e1ddf7dffe2a18e65f63bd4a51227920197438a48d4efbd34d. NativeID/tables/geometryPASS. 0138actualsubsetsuccess: SID800slot5 and840slot7accepted(S2CR305);801/841deniedexactrollback. verifiedroutes2/unmatchedfaultgate1,GFSR0. PHYup,CSIDversion20000001/IFEversion10000001,CSID+IFEresetPASS. ExactfailureWM0burstlimit1c64 wantedf got3 maskf,BEFOREWMenable/sensorstream. Noactualframe/packet0/IRQ0/export0. Sensor/pins/BOBcleanup1,clockcleanup1,SMMUrestored1 (notquarantine). PhoneLEFTROOT TWRP.
+
+0139 one-line correction requestburstlimit3 insteadf, retainsmaskfexactreadback. PinnedOnePlusbus_ver3 genericstartwritesfwithoutreadback;nativehardcheckrevealedactualIFE-litecap3. DoNOTclaimwrittenfneverworkedstock: originaldoesn'tcheck. Newrequest3chosenbasedmeasuredvalue; actualsubsequentDMAunverified. RealXNUheadercompilePASS,0139zero-fuzzPASS,cumulativePASS. FullbuildRAW8next; capturepathunchanged/finiteoneshot/noTPG/noextraIRQtest. VisibleUIabsenceunresolved. NoRAWfiletoextractyet.
+
 ## 2026-11-06 RAW7 temporary boot accepted; await manual FB return
 
 USER buildcomplete. Verified42226038453SUCCESS source35ee59127f266cab268cdd0b8f2f0620fe616f31. Downloadkernel/buildlog;0138present/noFAILEDhunks. KernelSHA0bf222126ca932d990a634856365cd0b8b5ad647161c503b942dbc7b7f02a13e matchesmanifest. builds/xnu-42226038453/in2020-native-raw7 imageSHA8255b0b5c28e40209def0c150f5dcce0577a77407edaaf22afbd98a27103da12,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.511sec. boot-result.json saved. PHONE LEFT RUNNING RAW7. Actualframe/exportUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+screensymptoms.

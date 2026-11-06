@@ -1,0 +1,11 @@
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -83,7 +83,7 @@
+     if(!cr_put(ife,0x1c00,0,0x30001) || !cr_put(ife,0x1c0c,0xffff,~0u) ||
+        !cr_put(ife,0x1c10,0,~0u) || !cr_put(ife,0x1c14,CR_STRIDE,~0u) ||
+        !cr_put(ife,0x1c18,0,~0u) || !cr_put(ife,0x1c08,CR_BYTES,~0u) ||
+-       !cr_put(ife,0x1c64,0xf,0xf))return false;
++       !cr_put(ife,0x1c64,0x3,0xf))return false;
+     cr_write(ife,0x1c28,0);cr_write(ife,0x1c30,0);cr_write(ife,0x1c34,1);
+     cr_write(ife,0x1c38,0);cr_write(ife,0x1c3c,1);
+     cr_write(ife,0x1a18,0x10);cr_write(ife,0x1a1c,0);cr_write(ife,0x28,0x10);
