@@ -1,3 +1,9 @@
+## 2026-11-07 SYSTEM CAMERA2: front capture + main callback PASS; rendered display freezes
+
+USER sawcounter326/noimage/aftertakeapparentfreeze, returnedFB. VerifiedTWRPtemporaryboot1.648s/rootADB. Readonly logs/camera-system2-20261107 total388754/flush42/nowrap SHAb26505cbe7b75af5970b368181b73d3c88e90bdc26f8569d7d63b2b8e8c74eae. Actualwindow+heartbeat10..320 working0, pressedfront1. FrontID471/frame48ms/CSIerrors0/nativeCRC08e051aa/cleanup1/SMMUrestored1. UI read/CRC error0, mainbegin/BGRAassigned582x437/maincomplete all logged. Heartbeatcontinues330/340/350 working0 AFTERusersees326. GPU submitted=completed646/fault0 anddisplayticks536per5sec continue, BUTswaps/presentsstopafterinitial36/42 andno laterGPUsubmits despiteheartbeatchanging. No tele request. BGRA DIDNOTresolve; don'tclaimUIImageformatrootcauseconfirmed. UIthread andkernelcapture aren'tblocked;displaycommit/renderpathisnexttarget.
+
+0148/UIv3 switches fromUIImageView directimagecontents toplainUIView drawRect/CGContextDrawImage into regularopaqueUIViewbacking (workingcontrols/textpath). ActualRAW/CRC/BGRAdataunchanged; no fakecameraimage. Explicitrasterbegin/complete+targetgeometrylogs. Stillheartbeat/mainlogs. Newfixedv3path preservesv1+v2. ContextdiffmustpassREALgitapplyandartifactbinaryv3checkbeforeboot. Pendingkernel+UIbuild/phoneverification. PhoneLEFTROOT TWRP. Thisisahypothesis-drivenrenderpathfix, notverifiedsuccess.
+
 ## 2026-11-07 SYSTEM CAMERA2 corrected kernel TEMP BOOT accepted; await BGRA/UI heartbeat feedback
 
 USER buildcomplete. Verified42306380957SUCCESS headfd4293935d833be4f9cd96dea4e98594a9f6e90b; SHA147ef85694ff24a63884829cfa62268ac1d105a94829a80b736b8f5d7e83508d matchesmanifest.0147present,NOTskipped; binarycontainscolonUIv2injectionpathandNOUIv1path. PairedUI42304009323 SHA f3726de16d4aa2812f98df24a5f1817e40e301ea5a53be7e7a8a0dde2637df62 verified/BGRA+heartbeatstrings. SDKsigned/ASANUBSANsuccessfrompriorUIrun. No newcamera hardwarecode changes.

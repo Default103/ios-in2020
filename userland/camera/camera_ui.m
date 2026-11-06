@@ -7,8 +7,32 @@
 #include "in2020_camera_user.h"
 #include "preview.h"
 
+/* UIImageView gives CA a direct image contents object. Rasterize into a
+ * regular UIView backing instead, like the working text/control surfaces. */
+@interface IN2020RasterPreview : UIView
+@property(nonatomic,strong) UIImage *image;
+@end
+@implementation IN2020RasterPreview
+@synthesize image=_image;
+- (void)setImage:(UIImage *)image {_image=image;[self setNeedsDisplay];}
+- (void)drawRect:(CGRect)rect {
+    CGContextRef ctx=UIGraphicsGetCurrentContext();if(!ctx)return;
+    CGContextSetRGBFillColor(ctx,0,0,0,1);CGContextFillRect(ctx,rect);
+    CGImageRef image=self.image.CGImage;if(!image)return;
+    CGFloat width=CGImageGetWidth(image),height=CGImageGetHeight(image);
+    CGFloat scale=MIN(self.bounds.size.width/width,self.bounds.size.height/height);
+    CGRect target=CGRectMake((self.bounds.size.width-width*scale)/2,
+        (self.bounds.size.height-height*scale)/2,width*scale,height*scale);
+    NSLog(@"IN2020 camera UI raster begin size=%gx%g target=%gx%g",width,height,target.size.width,target.size.height);
+    CGContextSaveGState(ctx);
+    CGContextTranslateCTM(ctx,0,self.bounds.size.height);CGContextScaleCTM(ctx,1,-1);
+    CGContextDrawImage(ctx,target,image);CGContextRestoreGState(ctx);
+    NSLog(@"IN2020 camera UI raster complete");
+}
+@end
+
 @interface IN2020CameraPanel : UIViewController
-@property(nonatomic,strong) UIImageView *preview;
+@property(nonatomic,strong) IN2020RasterPreview *preview;
 @property(nonatomic,strong) UILabel *status;
 @property(nonatomic,strong) UILabel *heartbeat;
 @property(nonatomic,strong) NSTimer *clock;
@@ -42,7 +66,7 @@ static UIWindow *cameraWindow;
     self.sensor=[[UISegmentedControl alloc] initWithItems:@[@"前摄 IMX471",@"长焦 S5K3M5"]];
     self.sensor.selectedSegmentIndex=0;[self.sensor addTarget:self action:@selector(change) forControlEvents:UIControlEventValueChanged];
     [stack addArrangedSubview:self.sensor];
-    self.preview=[[UIImageView alloc] init];self.preview.contentMode=UIViewContentModeScaleAspectFit;
+    self.preview=[[IN2020RasterPreview alloc] init];self.preview.opaque=YES;self.preview.backgroundColor=UIColor.blackColor;
     [self.preview setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
     [self.preview setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
     [stack addArrangedSubview:self.preview];

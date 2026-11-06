@@ -1,0 +1,22 @@
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -277,7 +277,7 @@
+     ccdigest_ctx_decl(CCSHA256_STATE_SIZE,CCSHA256_BLOCK_SIZE,h);
+     ccdigest_init(di,h);ccdigest_update(di,h,length-32,bytes+32);ccdigest_final(di,h,hash);
+     if(memcmp(hash,bytes,32))return EINVAL;
+-    const char *path="/usr/local/lib/in2020-camera-ui-v2.dylib";
++    const char *path="/usr/local/lib/in2020-camera-ui-v3.dylib";
+     vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;int resid=0;
+     int err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);
+     if(err==ENOENT) {
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -5619,7 +5619,7 @@
+ 				extern bool in2020_camera_ui_ready;
+ 				bool camera = in2020_camera_ui_ready && namelen == 11 && strncmp(name, "SpringBoard", 11) == 0;
+ 				int written = snprintf(env, size, "DYLD_INSERT_LIBRARIES=%.*s%s", (int)liblen, lib,
+-				    camera ? ":/usr/local/lib/in2020-camera-ui-v2.dylib" : "");
++				    camera ? ":/usr/local/lib/in2020-camera-ui-v3.dylib" : "");
+ 				return written >= 0 && (size_t)written < size;
+ 			}
+ 			word += len + (word + len < group + grouplen && word[len] == ',');
