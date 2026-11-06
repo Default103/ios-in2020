@@ -78,3 +78,13 @@ translation and a clean global fault latch. Rejected mappings are restored
 and never treated as mapped. Every polling interval checks DMA guards and
 fault state before accepting completion. An unidentified stream stops capture
 and records raw fault syndromes; no translation bypass is enabled.
+
+
+On 2026-11-06, kernel build 42229170609 captured a real IMX471 frame through
+XNU, CSID480 and IFE-lite DMA. The exported 2328x1748 RAW10 payload was read
+back from HFS and independently verified for length and CRC32. CSI reported
+no ECC/CRC errors, and hardware cleanup and owned SMMU restoration passed.
+`tools/preview-in2020-native-raw.py` validates and unpacks this file format,
+producing an uncalibrated grayscale mosaic and a separately labeled display
+stretch. Actual frame data remains private. Color, exposure control, live
+preview, Camera app integration and the visible iOS startup issue remain open.
