@@ -3,7 +3,7 @@
 #include "in2020_camera_raw.h"
 #include "in2020_camera_plan.h"
 struct cr_configuration cr_config={2328,1748,2912,155,57,0x471,0x16,0x10,3,0xac70000,480,0x5054,0x506c,14,false};
-static vm_offset_t pins[5];
+static vm_offset_t pins[5],pin_maps[2][5];
 static uint32_t cfg[5],latch[5];
 static bool saved,rail_vote[2],reset_taken,power_taken;
 static const char *rails[2]={"ldof7","ldof3"};
@@ -55,7 +55,8 @@ bool cr_sensor_up(void) {
     if(!plan || !bob_ready() || !rail_state(0,false) || !rail_state(1,false))return false;
     for(unsigned i=0;i<5;++i) {
         static const unsigned tele_pins[5]={0xf960000,0xf55a000,0xf18b000,0xf969000,0xf96a000};
-        pins[i]=ml_io_map(cr_config.rear?tele_pins[i]:in2020_camera_pins[i].base,0x1000);if(!pins[i])return false;
+        if(!pin_maps[cr_config.rear][i])pin_maps[cr_config.rear][i]=ml_io_map(cr_config.rear?tele_pins[i]:in2020_camera_pins[i].base,0x1000);
+        pins[i]=pin_maps[cr_config.rear][i];if(!pins[i])return false;
         cfg[i]=cr_read(pins[i],0);latch[i]=cr_read(pins[i],4)&2;
         printf("IN2020 RAW: sensor pin%u cfg=%#x latch=%#x\n",i,cfg[i],latch[i]);
         if(cfg[i]!=1 || latch[i])return false;

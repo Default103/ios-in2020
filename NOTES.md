@@ -1,3 +1,9 @@
+## 2026-11-06 Stage3 UI build correction and bounded mapping reuse
+
+Initial source d718c4b: kernel42286298717 inprogress; UI42286298464 failed ONLY -Wenum-conversion at CGImageCreate alpha argument, ASAN/UBSAN tests PASS. Explicit CGBitmapInfo cast fixes SDK18.5 warning. Unrelated genericgraphics42286298161 cancelled (workflow-filepath triggered); no graphics source changes.
+0146 caches fixed camera MMIO mappings (two PHY/pin profiles, one SMMU/GIC/CSI/IFE/clock set), instead of allocating another virtual mapping per manual snapshot. Hardware ownership snapshots are still refreshed each time; unknown cleanup still poisoned. Changed4Cunits nativecompilePASS/cumulativePASS. PhoneADBunique recovery detected, untouched whileCI.
+Pending next fullkernel+UIKit builds and actual systemtest. Do not boot old d718 kernel when newer0146 build available.
+
 ## 2026-11-06 System two-camera snapshots requested; stage3 pending CI/device
 
 USER latest priority: put existing TWO cameras inside system now (front IMX471 + tele S5K3M5), defer main/ultra. TELE5 actual readback logs/camera-native-tele5-20261106: 8 fresh completions, exposure1000/gain20/frame1656 verified, no CSI errors, export /private/var/tmp/in2020-tele-raw10-896803105.bin payload4118400 CRCb5b3414b, cleanup/SMMUrestore1. Host file+CRC verified; preview min62/max67 narrow range. USER visually confirmed picture normal; accept basic tele capture passed, brightness/color tuning remains. Front RAW8 already scene verified. Phone ROOT TWRP after readback.

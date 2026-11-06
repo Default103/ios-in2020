@@ -80,7 +80,7 @@ static UIWindow *cameraWindow;
                 NSData *data=[NSData dataWithBytes:pixels length:(NSUInteger)width*height];
                 CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
                 CGColorSpaceRef space=CGColorSpaceCreateDeviceGray();
-                CGImageRef cg=CGImageCreate(width,height,8,8,width,space,kCGImageAlphaNone,provider,NULL,false,kCGRenderingIntentDefault);
+                CGImageRef cg=CGImageCreate(width,height,8,8,width,space,(CGBitmapInfo)kCGImageAlphaNone,provider,NULL,false,kCGRenderingIntentDefault);
                 if(cg)image=[UIImage imageWithCGImage:cg];else error=ENOMEM;
                 if(cg)CGImageRelease(cg);CGColorSpaceRelease(space);CGDataProviderRelease(provider);
             }

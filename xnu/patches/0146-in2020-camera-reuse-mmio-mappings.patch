@@ -1,0 +1,92 @@
+--- a/bsd/dev/in2020_camera_clocks.c
++++ b/bsd/dev/in2020_camera_clocks.c
+@@ -51,15 +51,15 @@
+         cr_put(cc,cr_config.mclk_branch,mclk_branch|1u,1) && cr_wait(cc,cr_config.mclk_branch,1u<<31,0,2000);
+ }
+ bool cr_clocks_up(void) {
+-    cc=gcc=refgen=0;
+     arc_owned=pll_owned=gdsc_owned=ref_owned=mipi_owned=mclk_owned=false;
+     for(unsigned i=0;i<sizeof(branches)/sizeof(branches[0]);++i)branches[i].owned=false;
+     for(unsigned i=0;i<6;++i)roots[i].owned=false;
+     roots[3].cmd=0x6060;branches[6].offset=0x607c;branches[7].offset=0x6078;
+     if(cr_config.rear) {roots[3].cmd=0x6040;branches[6].offset=0x605c;branches[7].offset=0x6058;}
+     arc_owned=true;if(in2020_rpmh_camera_arc(true))return false;
+-    gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
+-    cc=ml_io_map(IN2020_CAMERA_CAMCC,IN2020_CAMERA_CAMCC_SIZE);refgen=ml_io_map(0x088e7000,0x1000);
++    if(!gcc)gcc=ml_io_map(0x100000,0x10000);if(!gcc || !branch_on(0) || !branch_on(1))return false;
++    if(!cc)cc=ml_io_map(IN2020_CAMERA_CAMCC,IN2020_CAMERA_CAMCC_SIZE);
++    if(!refgen)refgen=ml_io_map(0x088e7000,0x1000);
+     if(!cc || !refgen)return false;
+     gdsc_old=cr_read(cc,0xc144);ref_old=cr_read(refgen,0x80);
+     printf("IN2020 RAW: GDSC=%#x REFGEN=%#x PLL0=%#x\n",gdsc_old,ref_old,cr_read(cc,0));
+--- a/bsd/dev/in2020_camera_sensor.c
++++ b/bsd/dev/in2020_camera_sensor.c
+@@ -3,7 +3,7 @@
+ #include "in2020_camera_raw.h"
+ #include "in2020_camera_plan.h"
+ struct cr_configuration cr_config={2328,1748,2912,155,57,0x471,0x16,0x10,3,0xac70000,480,0x5054,0x506c,14,false};
+-static vm_offset_t pins[5];
++static vm_offset_t pins[5],pin_maps[2][5];
+ static uint32_t cfg[5],latch[5];
+ static bool saved,rail_vote[2],reset_taken,power_taken;
+ static const char *rails[2]={"ldof7","ldof3"};
+@@ -55,7 +55,8 @@
+     if(!plan || !bob_ready() || !rail_state(0,false) || !rail_state(1,false))return false;
+     for(unsigned i=0;i<5;++i) {
+         static const unsigned tele_pins[5]={0xf960000,0xf55a000,0xf18b000,0xf969000,0xf96a000};
+-        pins[i]=ml_io_map(cr_config.rear?tele_pins[i]:in2020_camera_pins[i].base,0x1000);if(!pins[i])return false;
++        if(!pin_maps[cr_config.rear][i])pin_maps[cr_config.rear][i]=ml_io_map(cr_config.rear?tele_pins[i]:in2020_camera_pins[i].base,0x1000);
++        pins[i]=pin_maps[cr_config.rear][i];if(!pins[i])return false;
+         cfg[i]=cr_read(pins[i],0);latch[i]=cr_read(pins[i],4)&2;
+         printf("IN2020 RAW: sensor pin%u cfg=%#x latch=%#x\n",i,cfg[i],latch[i]);
+         if(cfg[i]!=1 || latch[i])return false;
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -11,12 +11,14 @@
+ #include "in2020_camera_raw.h"
+ #include "in2020_camera_plan.h"
+ static vm_offset_t phy,csid,ife,gic;
++static vm_offset_t phy_maps[2],csid_map,ife_map,gic_map;
+ static unsigned irqs[3]={480,500,501};
+ static uint32_t irq_old[3];static unsigned irq_masked;
+ static bool phy_active,csid_active,ife_active;
+ static bool irqs_take(void) {
+     irqs[0]=cr_config.phy_irq;
+-    gic=ml_io_map(0x17a00000,0x10000);if(!gic)return false;
++    if(!gic_map)gic_map=ml_io_map(0x17a00000,0x10000);
++    gic=gic_map;if(!gic)return false;
+     for(unsigned i=0;i<3;++i) {
+         unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
+         if(cr_read(gic,0x200+reg)&bit)return false;
+@@ -44,7 +46,8 @@
+         unsigned at=cp32(p+8+i*8),value=cp32(p+12+i*8);
+         if((at&3) || at>=0x1000 || value>255)return false;
+     }
+-    phy=ml_io_map(cr_config.phy_base,0x2000);if(!phy)return false;phy_active=true;
++    if(!phy_maps[cr_config.rear])phy_maps[cr_config.rear]=ml_io_map(cr_config.phy_base,0x2000);
++    phy=phy_maps[cr_config.rear];if(!phy)return false;phy_active=true;
+     cr_write(phy,0x800,1);delay(5);cr_write(phy,0x800,0);delay(5);
+     for(unsigned i=0;i<n;++i)cr_write(phy,cp32(p+8+i*8),cp32(p+12+i*8));
+     for(unsigned i=0;i<11;++i) {cr_write(phy,0x82c+4*i,0);cr_write(phy,0x858+4*i,0xff);}
+@@ -52,7 +55,9 @@
+     return true;
+ }
+ static bool paths_up(void) {
+-    csid=ml_io_map(IN2020_CAMERA_CSID_LITE,0x1000);ife=ml_io_map(IN2020_CAMERA_IFE_LITE,0x3000);
++    if(!csid_map)csid_map=ml_io_map(IN2020_CAMERA_CSID_LITE,0x1000);
++    if(!ife_map)ife_map=ml_io_map(IN2020_CAMERA_IFE_LITE,0x3000);
++    csid=csid_map;ife=ife_map;
+     if(!csid || !ife)return false;
+     uint32_t cv=cr_read(csid,0),iv=cr_read(ife,0);
+     printf("IN2020 RAW: CSID480 version=%#x IFE-lite48x version=%#x\n",cv,iv);
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -64,7 +64,7 @@
+     if(!cr_dma_reusable())return false;
+     cb=gr1=0;accepted_routes=0;
+     if(ALLOC_BYTES>3u*512u*4096u)return false;
+-    smmu=ml_io_map(0x15000000,0x100000);
++    if(!smmu)smmu=ml_io_map(0x15000000,0x100000);
+     if(!smmu)return false;
+     uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
+     for(unsigned i=0;i<4;++i)global_before[i]=rd(smmu,global_regs[i]);

@@ -11,12 +11,14 @@
 #include "in2020_camera_raw.h"
 #include "in2020_camera_plan.h"
 static vm_offset_t phy,csid,ife,gic;
+static vm_offset_t phy_maps[2],csid_map,ife_map,gic_map;
 static unsigned irqs[3]={480,500,501};
 static uint32_t irq_old[3];static unsigned irq_masked;
 static bool phy_active,csid_active,ife_active;
 static bool irqs_take(void) {
     irqs[0]=cr_config.phy_irq;
-    gic=ml_io_map(0x17a00000,0x10000);if(!gic)return false;
+    if(!gic_map)gic_map=ml_io_map(0x17a00000,0x10000);
+    gic=gic_map;if(!gic)return false;
     for(unsigned i=0;i<3;++i) {
         unsigned reg=(irqs[i]/32)*4,bit=1u<<(irqs[i]%32);
         if(cr_read(gic,0x200+reg)&bit)return false;
@@ -44,7 +46,8 @@ static bool phy_up(void) {
         unsigned at=cp32(p+8+i*8),value=cp32(p+12+i*8);
         if((at&3) || at>=0x1000 || value>255)return false;
     }
-    phy=ml_io_map(cr_config.phy_base,0x2000);if(!phy)return false;phy_active=true;
+    if(!phy_maps[cr_config.rear])phy_maps[cr_config.rear]=ml_io_map(cr_config.phy_base,0x2000);
+    phy=phy_maps[cr_config.rear];if(!phy)return false;phy_active=true;
     cr_write(phy,0x800,1);delay(5);cr_write(phy,0x800,0);delay(5);
     for(unsigned i=0;i<n;++i)cr_write(phy,cp32(p+8+i*8),cp32(p+12+i*8));
     for(unsigned i=0;i<11;++i) {cr_write(phy,0x82c+4*i,0);cr_write(phy,0x858+4*i,0xff);}
@@ -52,7 +55,9 @@ static bool phy_up(void) {
     return true;
 }
 static bool paths_up(void) {
-    csid=ml_io_map(IN2020_CAMERA_CSID_LITE,0x1000);ife=ml_io_map(IN2020_CAMERA_IFE_LITE,0x3000);
+    if(!csid_map)csid_map=ml_io_map(IN2020_CAMERA_CSID_LITE,0x1000);
+    if(!ife_map)ife_map=ml_io_map(IN2020_CAMERA_IFE_LITE,0x3000);
+    csid=csid_map;ife=ife_map;
     if(!csid || !ife)return false;
     uint32_t cv=cr_read(csid,0),iv=cr_read(ife,0);
     printf("IN2020 RAW: CSID480 version=%#x IFE-lite48x version=%#x\n",cv,iv);

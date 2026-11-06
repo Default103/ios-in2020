@@ -64,7 +64,7 @@ bool cr_dma_up(void) {
     if(!cr_dma_reusable())return false;
     cb=gr1=0;accepted_routes=0;
     if(ALLOC_BYTES>3u*512u*4096u)return false;
-    smmu=ml_io_map(0x15000000,0x100000);
+    if(!smmu)smmu=ml_io_map(0x15000000,0x100000);
     if(!smmu)return false;
     uint32_t scr=rd(smmu,0),id0=rd(smmu,0x20),id1=rd(smmu,0x24);
     for(unsigned i=0;i<4;++i)global_before[i]=rd(smmu,global_regs[i]);
