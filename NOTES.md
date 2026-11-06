@@ -1,3 +1,9 @@
+## 2026-11-06 RAW4 temporary boot accepted; await manual FB return
+
+USER buildcomplete. Verified42212912445SUCCESS sourceeb55ce43cc4c88cdedf1a3c8698a175ecccb45f1. Downloadkernel/buildlog;0135present/noFAILEDhunks. KernelSHA68fef067c5f33d50cd0c82437e285056852a6b65db207d8c805a0a712b6608e1 matchesmanifest. builds/xnu-42212912445/in2020-native-raw4 imageSHA6bafe35775135005cf84ec4eb5d5cb6c4631f6f0fe10178a965aa0cea658a11a,600cmd/in2020cam2. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.521sec. boot-result.json saved. PHONE LEFT RUNNING RAW4. Actualframe/exportUNVERIFIED. Asyncaskedrun1-2min/manualFBreturn+screensymptoms.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot,waitADB60-90sec then readonlyNEW logs/camera-native-raw4-20261106. InspectinvalidSMRprobe/read/restored,selectedwritableslot,noslotdenial,CB/CSI/IFE/WMcompletion/cleanup/export. Ifexactexporterror0/resid0 retrieveexactnativepathwithtools/read-in2020-native-raw.py intoNEWprivatehostdir,checkCRC. No frameclaimfromboot. VisibleUIissueunresolved.
+
 ## 2026-11-06 RAW3 collected: invalid SMR5 not writable; slot selection fix
 
 USER reportedconsolelastsensorpowerdown1/BOB1thenRSCline, laterreturnedFB. VerifiedTWRPtemporarybootOKAY1.658s,ADBreadywithin60sec. Readonly logs/camera-native-raw3-20261106:340881bytes25flushnowrap SHAdd6bd9a8b3c9c327c781dcf1b5ba0a340de97ee8ce7b4d42c3e24f29248896dc. ActualnativeID0471/tables/geometryPASS, TCR2/SCTLRfixesPASS, newglobalASIDfffeaccepted. SMR5offset814 write84410800read0 fails, AFTERCB/S2CRreadbackspassed, BEFOREPHY/CSI/stream. NoRAW/frameIRQ0/export0. Sensor/pins/BOBcleanup1,clockcleanup1,mappingquarantine1. BackgroundSpringBoardcontinues,visibleUIabsenceunresolved. PhoneLEFTROOT TWRP, no mount/writesforcapture.
