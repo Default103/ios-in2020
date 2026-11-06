@@ -1,3 +1,7 @@
+## 2026-11-07 Raster preview build underway
+
+Source02405be3481303143bd8ccc737a01ad5f8c65087. Kernel42310641810 building. UI42310641719SUCCESS/signature+ASANUBSAN; downloadedbuilds/camera-ui-42310641719/in2020-camera-ui-v3.dylib SHA012795a93c51f8c6d53c83c9e56c4301dcb9233c9eb398ce83a95bca1e1e5c17 matchesmanifest. Reuseexistingbuild-in2020-camera-system.py withnewkernel+UIv3. Beforebootverify0148NOTskipped andbinaryUIv3pathpresent/noUIv2path; realgitapply--check0148PASS. PhoneROOT TWRP(unmounteduserdata),notbootednewversionyet. Awaitkernel; USERmayinterruptwithbuildcomplete,continueverify/package/tempbootdirectly.
+
 ## 2026-11-07 SYSTEM CAMERA2: front capture + main callback PASS; rendered display freezes
 
 USER sawcounter326/noimage/aftertakeapparentfreeze, returnedFB. VerifiedTWRPtemporaryboot1.648s/rootADB. Readonly logs/camera-system2-20261107 total388754/flush42/nowrap SHAb26505cbe7b75af5970b368181b73d3c88e90bdc26f8569d7d63b2b8e8c74eae. Actualwindow+heartbeat10..320 working0, pressedfront1. FrontID471/frame48ms/CSIerrors0/nativeCRC08e051aa/cleanup1/SMMUrestored1. UI read/CRC error0, mainbegin/BGRAassigned582x437/maincomplete all logged. Heartbeatcontinues330/340/350 working0 AFTERusersees326. GPU submitted=completed646/fault0 anddisplayticks536per5sec continue, BUTswaps/presentsstopafterinitial36/42 andno laterGPUsubmits despiteheartbeatchanging. No tele request. BGRA DIDNOTresolve; don'tclaimUIImageformatrootcauseconfirmed. UIthread andkernelcapture aren'tblocked;displaycommit/renderpathisnexttarget.
