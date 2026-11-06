@@ -36,6 +36,11 @@ static inline bool cp_plan(const uint8_t *p,size_t bytes) {
 static inline bool cp_dma_readback(bool tcr2,uint32_t wanted,uint32_t got) {
     return got!=0xffffffffu && ((wanted^got)&(tcr2?~0x60u:~0u))==0;
 }
+/* Only fault-on-unmatched, live translation and a clean global latch allow
+ * a finite capture with a verified subset of the whole-block FDT routes. */
+static inline bool cp_path_gate(uint32_t scr,uint32_t fault,unsigned routes) {
+    return scr!=0xffffffffu && (scr&0x40bu)==0x402u && fault==0 && routes>0 && routes<=4;
+}
 static inline bool cp_context(bool referenced,uint32_t control,uint32_t fault,uint32_t tlb) {
     return !referenced && !(control&1u) && !(control&~0x11f7u) &&
         !(fault&0xc00001feu) && !(tlb&1u);

@@ -8,6 +8,17 @@ static void p32(uint8_t *p,unsigned v) {for(unsigned i=0;i<4;++i)p[i]=(uint8_t)(
 static void row(uint8_t *p,unsigned a,unsigned v) {p[0]=(uint8_t)a;p[1]=(uint8_t)(a>>8);p[2]=(uint8_t)v;}
 static void fix(uint8_t *p) {p32(p+60,cp_crc(p+64,1696));}
 int main(int argc,char **argv) {
+    CHECK(cp_path_gate(0x2e0406,0,1));
+    CHECK(cp_path_gate(0x260406,0,4));
+    CHECK(!cp_path_gate(0x2e0006,0,1)); /* unmatched bypass denied */
+    CHECK(!cp_path_gate(0x2e0407,0,1)); /* CLIENTPD denied */
+    CHECK(!cp_path_gate(0x2e040e,0,1)); /* EXID format denied */
+    CHECK(!cp_path_gate(0x2e0406,1,1));
+    CHECK(!cp_path_gate(0x2e0406,0,0));
+    CHECK(!cp_path_gate(0x2e0406,0,5));
+    CHECK(!cp_path_gate(0xffffffff,0,1));
+    CHECK(!cp_path_gate(0x2e0404,0,1)); /* fault reporting disabled */
+
     CHECK(cp_dma_readback(true,0x38011,0x38071));
     CHECK(cp_dma_readback(true,0x38011,0x38011));
     CHECK(!cp_dma_readback(true,0x38011,0x38070));

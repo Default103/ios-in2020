@@ -148,6 +148,7 @@ void in2020_camera_capture(void) {
     dma=true;if(!cr_dma_up() || !phy_up() || !paths_up())goto end;
     stream=true;if(!cr_sensor_stream(true))goto end;
     for(unsigned ms=0;ms<3000;++ms) {
+        if(!cr_dma_ok()) {printf("IN2020 RAW: DMA fault/guard stop before accepting frame\n");break;}
         if((cr_read(ife,0x1a28)&0x10)) {frame=true;printf("IN2020 RAW: fresh WM0 completion after %u ms\n",ms);break;}
         if(cr_read(ife,0x1a64) || cr_read(ife,0x1a68) || cr_read(ife,0x1a70))break;
         delay_for_interval(1,NSEC_PER_MSEC);

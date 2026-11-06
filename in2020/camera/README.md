@@ -70,3 +70,11 @@ It reads bounded userdata blocks from root TWRP without mounting or writing
 the partition, resolves the HFS+ catalog and checks the complete frame CRC.
 The camera itself runs only in XNU. The reader refuses unsupported overflow
 extents, ambiguous paths, unexpected geometry and incomplete payloads.
+
+
+The finite capture path may use a verified subset of whole-IFE FDT routes.
+This requires hardware fault-on-unmatched mode, fault reporting, enabled
+translation and a clean global fault latch. Rejected mappings are restored
+and never treated as mapped. Every polling interval checks DMA guards and
+fault state before accepting completion. An unidentified stream stops capture
+and records raw fault syndromes; no translation bypass is enabled.

@@ -22,6 +22,7 @@ static const unsigned regs[]={0,0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
 static uint32_t saved[9],global_before[4];
 static const unsigned global_regs[4]={0x48,0x50,0x54,0x58};
 static bool published,quarantined;
+static unsigned accepted_routes;
 static uint32_t rd(vm_offset_t p,unsigned off) {
     uint32_t v=*(volatile uint32_t *)(p+off);
     __asm__ volatile("dmb oshld" ::: "memory");return v;
@@ -68,7 +69,7 @@ bool cr_dma_up(void) {
     unsigned matches=id0&255,contexts=id1&255,stage2=(id1>>16)&255;
     unsigned page=(id1>>31)?0x10000:0x1000,pages=2u<<((id1>>28)&7);
     printf("IN2020 RAW DMA: SMMU scr=%#x id0=%#x id1=%#x SMRs=%u CBs=%u S2CBs=%u\n",scr,id0,id1,matches,contexts,stage2);
-    if(scr==0xffffffff || id0==0xffffffff || id1==0xffffffff || (scr&8) ||
+    if(scr==0xffffffff || id0==0xffffffff || id1==0xffffffff || !cp_path_gate(scr,global_before[0],1) ||
        !matches || matches>128 || !contexts || contexts>128 || stage2>=contexts ||
        2u*page*pages!=0x100000 || contexts>pages || !global_unchanged()) {
         printf("IN2020 RAW DMA: geometry/access gate rejected\n");return false;
@@ -175,50 +176,44 @@ bool cr_dma_up(void) {
     /* Preserve the actual FDT's four distinct mask-0x400 routes, rather
      * than synthesizing one wider mask-0x441 route. OnePlus write_s2cr
      * also explicitly sets SHCFG_NSH (bits9:8=3) before publishing SMR. */
-    /* A writable invalid slot may still reject VALID (RAW5 SMR6).
-     * Retry only after exact rollback of a rejected, still-invalid entry.
-     * Never remove a live inherited or successfully published mapping.
-     * This distinguishes slot restrictions from SID restrictions without
-     * assuming an odd SID is secure or discarding required FDT streams. */
+    /* The FDT covers the whole IFE block, not just this finite WM0 path.
+     * Publish only routes whose writes verify. Unknown streams MUST fault:
+     * up-front sCR0.USFCFG=1, CLIENTPD=0 and GFSR=0 are mandatory.
+     * Live faults stop capture; no bypass, no unverified route accepted. */
+    accepted_routes=0;
     for(unsigned i=0;ok && i<4;++i) {
-        bool found=false;
-        for(unsigned candidate=0;candidate<matches;++candidate) {
-            unsigned so=0x800+4*candidate,ro=0xc00+4*candidate;
-            uint32_t before=rd(smmu,so),route=rd(smmu,ro);
-            if(before==0xffffffff || route==0xffffffff) {ok=false;break;}
-            if(before>>31)continue;
-            uint32_t desired=0x80000000u|(0x400u<<16)|camera_ids[i];
-            if(!sync_reg(smmu,ro,0x300u|context)) {ok=false;break;}
-            wr(smmu,so,desired);uint32_t got=rd(smmu,so);
-            printf("IN2020 RAW DMA: FDT stream %u slot=%u want=%#x SMR=%#x S2CR=%#x SCTLR=%#x FSR=%#x GFSR=%#x\n",
-                i,candidate,desired,got,rd(smmu,ro),rd(cb,0),rd(cb,0x58),rd(smmu,0x48));
-            if(got==desired && rd(smmu,ro)==(0x300u|context) && global_unchanged() && !(rd(cb,0x58)&CR_FSR_FAULT)) {
-                slots[i]=candidate;slot_smr[i]=before;slot_route[i]=route;
-                found=true;break;
-            }
-            /* A VALID or otherwise unexpected readback is uncertain: keep
-             * wired tables/quarantine, never probe another candidate. */
-            if((got>>31) || (got!=0 && got!=before)) {ok=false;break;}
-            bool restored=sync_reg(smmu,so,before) && sync_reg(smmu,ro,route);
-            if(!restored || !global_unchanged() || (rd(cb,0x58)&CR_FSR_FAULT)) {ok=false;break;}
-            printf("IN2020 RAW DMA: slot %u denied stream %#x; exact rollback confirmed\n",candidate,camera_ids[i]);
+        unsigned candidate=slots[i],so=0x800+4*candidate,ro=0xc00+4*candidate;
+        uint32_t before=slot_smr[i],route=slot_route[i];
+        if(rd(smmu,so)!=before || rd(smmu,ro)!=route || (before>>31)) {ok=false;break;}
+        uint32_t desired=0x80000000u|(0x400u<<16)|camera_ids[i];
+        if(!sync_reg(smmu,ro,0x300u|context)) {ok=false;break;}
+        wr(smmu,so,desired);uint32_t got=rd(smmu,so);
+        printf("IN2020 RAW DMA: path stream %#x slot=%u want=%#x SMR=%#x route=%#x FSR=%#x GFSR=%#x\n",
+            camera_ids[i],candidate,desired,got,rd(smmu,ro),rd(cb,0x58),rd(smmu,0x48));
+        if(got==desired && rd(smmu,ro)==(0x300u|context) && global_unchanged() && !(rd(cb,0x58)&CR_FSR_FAULT)) {
+            slots[accepted_routes]=candidate;slot_smr[accepted_routes]=before;slot_route[accepted_routes]=route;
+            ++accepted_routes;continue;
         }
-        ok=ok && found;
-        if(!found)printf("IN2020 RAW DMA: no publishable slot for required FDT stream %#x; no sensor stream\n",camera_ids[i]);
+        if((got>>31) || (got!=0 && got!=before)) {ok=false;break;}
+        bool restored=sync_reg(smmu,so,before) && sync_reg(smmu,ro,route);
+        if(!restored || !global_unchanged() || (rd(cb,0x58)&CR_FSR_FAULT)) {ok=false;break;}
+        printf("IN2020 RAW DMA: stream %#x not mapped; rollback verified, any access must fault\n",camera_ids[i]);
     }
+    ok=ok && cp_path_gate(rd(smmu,0),rd(smmu,0x48),accepted_routes) && global_unchanged();
+    printf("IN2020 RAW DMA: verified routes=%u unmatched-fault gate=%d\n",accepted_routes,ok);
     published=ok;
     return ok;
 }
 static bool memory_off(void) {
     if(!published)return false;
     bool ok=true;
-    for(unsigned i=0;i<4;++i)ok=sync_reg(smmu,0x800+4*slots[i],slot_smr[i])&&ok;
+    for(unsigned i=0;i<accepted_routes;++i)ok=sync_reg(smmu,0x800+4*slots[i],slot_smr[i])&&ok;
     ok=sync_reg(cb,0,0)&&ok;ok=tlb()&&ok;
     if(!ok)return false;
     for(unsigned i=1;i<sizeof(regs)/sizeof(regs[0]);++i)ok=sync_reg(cb,regs[i],saved[i])&&ok;
     ok=sync_reg(gr1,4*context,old_cbar)&&ok;
     ok=sync_reg(gr1,0x800+4*context,old_cba2r)&&ok;
-    for(unsigned i=0;i<4;++i)ok=sync_reg(smmu,0xc00+4*slots[i],slot_route[i])&&ok;
+    for(unsigned i=0;i<accepted_routes;++i)ok=sync_reg(smmu,0xc00+4*slots[i],slot_route[i])&&ok;
     ok=sync_reg(cb,0,saved[0])&&ok;
     if(ok) {published=false;quarantined=false;}
     return ok;
@@ -231,7 +226,12 @@ void cr_dma_invalidate(void) {
     __asm__ volatile("dsb sy":::"memory");
 }
 bool cr_dma_ok(void) {
-    if(!published || (rd(cb,0x58)&CR_FSR_FAULT) || !global_unchanged())return false;
+    if(!published)return false;
+    if((rd(cb,0x58)&CR_FSR_FAULT) || !global_unchanged() || !cp_path_gate(rd(smmu,0),rd(smmu,0x48),accepted_routes)) {
+        printf("IN2020 RAW DMA: live fault GFSR=%#x SYNR=%#x/%#x/%#x CB-FSR=%#x FAR=%#x:%#x FSYNR=%#x\n",
+            rd(smmu,0x48),rd(smmu,0x50),rd(smmu,0x54),rd(smmu,0x58),rd(cb,0x58),rd(cb,0x64),rd(cb,0x60),rd(cb,0x68));
+        return false;
+    }
     const uint8_t *p=(const uint8_t *)buffer;
     for(unsigned i=0;i<4096;++i)if(p[i]!=0xa5)return false;
     for(unsigned i=4096+CR_BYTES;i<ALLOC_BYTES;++i)if(p[i]!=0xa5)return false;
