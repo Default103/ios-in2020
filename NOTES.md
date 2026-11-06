@@ -1,3 +1,9 @@
+## 2026-11-06 TELE5 temporary boot accepted; await manual FB return
+
+USER已完成 interpretedbuildcomplete;verified42279828601SUCCESS source19a6434da2b5a24874bb560f84e4bf942e3fdbe8. KernelSHAa53db64ad1c6dc7aa35218d03b832ad89b3c24f33459643da36f3a1e9d84143e matchesmanifest;0144present/noFAILEDhunks/newexposurestringpresent. Packaged builds/xnu-42279828601/in2020-native-tele5 --sensortele,600cmd imageSHA6c2741ebcdab5fd8aacaf22bcd23f441b4fc983eceb9a6aa6f1af31f258e91c4. UniqueTWRP3.7/unmounteduserdata->FBuniqueKona/max805306368->temporaryfastbootbootOKAY0.513sec. boot-result.json saved. PHONE LEFT RUNNINGTELE5. ActualframeUNVERIFIED. Asyncaskedbrightscene/run1-2min/manualFBreturn+lastoutput.
+
+NEXT USERreturn: verifiedTWRPtemporaryboot/waitADB60-90sec ->NEWreadonly logs/camera-native-tele5-20261106. Inspectteleexposure0202=3e8/gain20/frame678readbacks,WMframe1..8/staledone/overflow/fault,export. Ifsuccess exacttelefilepatherror0/resid0 ->read-in2020-native-raw.py+previewtool; verifyCRCANDscenestructure/pixelrange. PriorTELE4payloadCRCpassedbut62..68ONLY7values/nearblackdespiteUSERbrightscene,NOTopticalsuccess. Main/ultraCphyandthen systemviewfinderremainactivependingobjectives. No3rearworkingclaimuntilactualusefulframes.
+
 ## 2026-11-06 TELE4 native payload exported/CRC verified but NEAR BLACK in bright scene
 
 USERreturnedFB. VerifiedTWRPtemporarybootOKAY1.650s/ADBwithin60sec. Readonly logs/camera-native-tele4-20261106:325469bytes9flushnowrap SHA5cd90038e70baf6fdd85ea9ed3b52d2b0bc64a56163fb5d9e68466383560e131. MIPIstableON2observations/clocksPASS;L4sub6b/VSET1056/5pinscfg1latch0PASS;ldof7/4enableACK. NativeID30d5matched,971tablewrites+1333clock/geometryreadbackPASS. 2SMMUroutes/matchedfaultgatePASS;CSID20000001/IFE10000001. WM0freshdone21ms,CSI2336packets/ECC0/CRC0/rawbytes4102800,IFEerrors0. Export/private/var/tmp/in2020-tele-raw10-892250866.bin,4118400bytes/CRC08952303/error0/resid0;allsensorclockcleanup1/SMMUrestored1.
