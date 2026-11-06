@@ -128,6 +128,19 @@ bool cr_sensor_program(void) {
     /* Independently read back output geometry/format before enabling CSI DMA. */
     const unsigned regs[3]={cr_config.rear?0x136:0x112,0x34c,0x34e},wanted[3]={cr_config.rear?0x1333:0x0a0a,CR_WIDTH,CR_HEIGHT};
     for(unsigned i=0;i<3;++i)if(!transfer(regs[i],NULL,0,id,2) || ((id[0]<<8)|id[1])!=wanted[i])return false;
+    if(cr_config.rear) {
+        /* Fixed test exposure while still in standby: 1000 lines <1656,
+         * leaving 656 lines of margin. Keep the pinned mode gain unchanged. */
+        const uint8_t exposure[2]={0x03,0xe8};
+        if(!transfer(0x202,exposure,2,NULL,0))return false;
+        const unsigned test_regs[3]={0x202,0x204,0x340},test_values[3]={1000,0x20,1656};
+        for(unsigned i=0;i<3;++i) {
+            if(!transfer(test_regs[i],NULL,0,id,2))return false;
+            unsigned got=(id[0]<<8)|id[1];
+            printf("IN2020 RAW: tele exposure reg=%#x value=%#x expected=%#x\n",test_regs[i],got,test_values[i]);
+            if(got!=test_values[i])return false;
+        }
+    }
     return true;
 }
 bool cr_sensor_stream(bool on) {uint8_t v=on?1:0;return reset_taken && transfer(0x100,&v,1,NULL,0);}
