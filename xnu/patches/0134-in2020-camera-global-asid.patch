@@ -1,0 +1,49 @@
+--- a/bsd/dev/in2020_camera_dma.c
++++ b/bsd/dev/in2020_camera_dma.c
+@@ -13,6 +13,7 @@
+ _Static_assert(ALLOC_BYTES<=3u*512u*4096u,"three 4K leaf tables bound");
+ static vm_offset_t smmu,cb,gr1,buffer,tables;
+ static unsigned match,context;
++#define CAMERA_ASID 0xfffeu
+ static uint32_t old_smr,old_s2cr,old_cbar,old_cba2r;
+ static const unsigned regs[]={0,0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
+ static uint32_t saved[9],global_before[4];
+@@ -33,7 +34,7 @@
+     return ok;
+ }
+ static bool tlb(void) {
+-    wr(cb,0x610,context+1);wr(cb,0x7f0,1);
++    wr(cb,0x610,CAMERA_ASID);wr(cb,0x7f0,1);
+     for(unsigned i=0;i<100;++i) {
+         if(!(rd(cb,0x7f4)&1))return true;
+         delay_for_interval(1,NSEC_PER_MSEC);
+@@ -93,6 +94,16 @@
+         }
+     }
+     if(context==~0u) {printf("IN2020 RAW DMA: no readable unreferenced disabled CB\n");return false;}
++    /* ASIDPNE is observed WI on this board. Use a globally unused ASID
++     * instead of requesting private namespaces or ignoring SCTLR readback.
++     * Include disabled firmware banks and both TTBRs; refuse unreadable state. */
++    for(unsigned i=0;i<contexts;++i) {
++        vm_offset_t p=smmu+(pages+i)*page;
++        uint32_t a=rd(p,0x24),b=rd(p,0x2c);
++        if(a==0xffffffff || b==0xffffffff || (a>>16)==CAMERA_ASID || (b>>16)==CAMERA_ASID) {
++            printf("IN2020 RAW DMA: global ASID unavailable CB=%u\n",i);return false;
++        }
++    }
+     gr1=smmu+page;old_cbar=rd(gr1,4*context);old_cba2r=rd(gr1,0x800+4*context);
+     if(old_cbar==0xffffffff || old_cba2r==0xffffffff) {printf("IN2020 RAW DMA: GR1 inaccessible CB=%u\n",context);return false;}
+     for(unsigned i=0;i<sizeof(regs)/sizeof(regs[0]);++i) {
+@@ -126,10 +137,10 @@
+     bool ok=sync_reg(cb,0,0) && sync_reg(gr1,0x800+4*context,1) && sync_reg(gr1,4*context,0x1f300) &&
+         sync_reg(cb,0x10,0x38011) && sync_reg(cb,0x30,0x803519) &&
+         sync_reg(cb,0x20,(uint32_t)root_pa) &&
+-        sync_reg(cb,0x24,(uint32_t)(root_pa>>32)|((context+1)<<16)) &&
++        sync_reg(cb,0x24,(uint32_t)(root_pa>>32)|(CAMERA_ASID<<16)) &&
+         sync_reg(cb,0x28,0) && sync_reg(cb,0x2c,0) &&
+         sync_reg(cb,0x38,0xf404ff44) && sync_reg(cb,0x3c,0) && tlb() &&
+-        sync_reg(cb,0,0x1127) && sync_reg(smmu,0xc00+4*match,context) &&
++        sync_reg(cb,0,0x127) && sync_reg(smmu,0xc00+4*match,context) &&
+         sync_reg(smmu,0x800+4*match,0x80000000u|(CAMERA_MASK<<16)|CAMERA_SID);
+     published=ok;
+     return ok;
