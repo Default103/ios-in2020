@@ -1,3 +1,11 @@
+## 2026-11-07 SYSTEM CAMERA2 corrected kernel TEMP BOOT accepted; await BGRA/UI heartbeat feedback
+
+USER buildcomplete. Verified42306380957SUCCESS headfd4293935d833be4f9cd96dea4e98594a9f6e90b; SHA147ef85694ff24a63884829cfa62268ac1d105a94829a80b736b8f5d7e83508d matchesmanifest.0147present,NOTskipped; binarycontainscolonUIv2injectionpathandNOUIv1path. PairedUI42304009323 SHA f3726de16d4aa2812f98df24a5f1817e40e301ea5a53be7e7a8a0dde2637df62 verified/BGRA+heartbeatstrings. SDKsigned/ASANUBSANsuccessfrompriorUIrun. No newcamera hardwarecode changes.
+
+Packaged builds/xnu-42306380957/in2020-system-camera2/in2020-ios16-camera-system-boot.img SHA9f600329a5c1f1710cedf745d8d5e4bc91c8aea650d7d05cefdf8c38ddb722d9 size18731008/stage3/600cmd/BOTHprivateplans/PHYops/UIv2/noADSP. ROOT TWRP3.7unique/unmounteduserdata ->FBuniqueKona/max805306368 ->temporaryfastbootbootOKAY0.518s. boot-result.json saved. PHONE LEFT RUNNING correctedSYSTEMCAMERA2. ActualBGRApreview/UIresponsiveness andtelecapture stillUNVERIFIED.
+
+USERnext: waitsystem+30secwindow, confirm heartbeatcounteradvances; takefrontframe andcountercontinues, thentele/backfront. Ifnopicture/freeze: recordcounter+status/error/manualFBreturn. NextreadonlyNEW logs/camera-system2-20261107 afterverifiedTWRP. Inspectwindowvisible/heartbeat/pressed/mainbegin/BGRAassigned/maincomplete/nativeframeCRC+cleanup; don'tassumekernelhangfromUIstuck. SYSTEMCAMERA1had2actualfrontsuccess/error0 butusernoimage. Rejected42304009524artifactneverbooted; markedREJECTED_DO_NOT_BOOT. NoverifiedremoteFBreturn.
+
 ## 2026-11-06 SYSTEM CAMERA2 build rejected at artifact verification; DO NOT BOOT42304009524
 
 USER buildcomplete. Kernel42304009524 markedSUCCESS sourcee1ce0f0, SHA059d3b04389b4566fdc4faf259fb2b2269a57e567dc9ccbf402d00f99e805a43 matchesmanifest BUT binary stillcontainsUIv1paths. Buildlog warnsSkipping0147/errorpatchfailedkern_exec5622. Cause0147exec hunkhadZEROCONTEXT, gitapplyrejectswithout--unidiff-zero; customzero-fuzzcheckerpreviouslypassedbutdidnotcheckgitcontextrequirements. Entire0147skippedatomicallyinclinstallerpath. Therefore DON'Tboot thiskernel withUIv2 (installerwouldrefuseexistingdifferentv1hash). Alreadypackagedin2020-system-camera2 isREJECTED artifact,neverbooted. Kernelmustberebuiltwithcontextdiff. UsernotifiedCIsuccessinsufficient. PhoneleftROOT TWRP.
