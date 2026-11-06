@@ -41,4 +41,10 @@ static inline void i20_preview(const uint8_t *raw,unsigned width,unsigned height
         unsigned v=sum/16;out[y*w+x]=(uint8_t)(v<=low?0:v>=high?255:(v-low)*255/(high-low));
     }
 }
+/* Opaque BGRA uses the same four-byte pixel format as the display bridge. */
+static inline void i20_bgra(const uint8_t *grey,size_t count,uint8_t *out) {
+    for(size_t i=0;i<count;++i) {
+        out[4*i]=out[4*i+1]=out[4*i+2]=grey[i];out[4*i+3]=255;
+    }
+}
 #endif

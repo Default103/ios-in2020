@@ -277,7 +277,7 @@ static int install_ui(void) {
     ccdigest_ctx_decl(CCSHA256_STATE_SIZE,CCSHA256_BLOCK_SIZE,h);
     ccdigest_init(di,h);ccdigest_update(di,h,length-32,bytes+32);ccdigest_final(di,h,hash);
     if(memcmp(hash,bytes,32))return EINVAL;
-    const char *path="/usr/local/lib/in2020-camera-ui-v1.dylib";
+    const char *path="/usr/local/lib/in2020-camera-ui-v2.dylib";
     vfs_context_t ctx=vfs_context_kernel();vnode_t vp=NULLVP;int resid=0;
     int err=vnode_open(path,FREAD|O_NOFOLLOW,0,0,&vp,ctx);
     if(err==ENOENT) {

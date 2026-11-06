@@ -3,6 +3,9 @@
 #include <stdio.h>
 #define CHECK(x) do {if(!(x)) {fprintf(stderr,"failed line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 int main(int argc,char **argv) {
+    uint8_t grey[3]={0,127,255},bgra[13]={0};bgra[12]=0xa5;
+    i20_bgra(grey,3,bgra);
+    CHECK(bgra[0]==0 && bgra[3]==255 && bgra[4]==127 && bgra[5]==127 && bgra[6]==127 && bgra[7]==255 && bgra[8]==255 && bgra[11]==255 && bgra[12]==0xa5);
     const uint8_t v[]={0,255,128,63,0x6c};
     CHECK(i20_pixel(v,0)==0);CHECK(i20_pixel(v,1)==1023);CHECK(i20_pixel(v,2)==514);CHECK(i20_pixel(v,3)==253);
     CHECK(i20_crc((const uint8_t *)"123456789",9)==0xcbf43926);

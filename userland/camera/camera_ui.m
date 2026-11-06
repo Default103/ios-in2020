@@ -10,6 +10,9 @@
 @interface IN2020CameraPanel : UIViewController
 @property(nonatomic,strong) UIImageView *preview;
 @property(nonatomic,strong) UILabel *status;
+@property(nonatomic,strong) UILabel *heartbeat;
+@property(nonatomic,strong) NSTimer *clock;
+@property(nonatomic,assign) unsigned ticks;
 @property(nonatomic,strong) UISegmentedControl *sensor;
 @property(nonatomic,strong) UIButton *take;
 @property(nonatomic,strong) UIButton *toggle;
@@ -28,6 +31,14 @@ static UIWindow *cameraWindow;
         [stack.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-12]]];
     UILabel *title=[[UILabel alloc] init];title.text=@"IN2020 相机测试";title.textColor=UIColor.whiteColor;
     title.font=[UIFont boldSystemFontOfSize:24];[stack addArrangedSubview:title];
+    self.heartbeat=[[UILabel alloc] init];self.heartbeat.textColor=UIColor.lightGrayColor;
+    self.heartbeat.text=@"界面运行中 · 0";[stack addArrangedSubview:self.heartbeat];
+    __weak IN2020CameraPanel *weakSelf=self;
+    self.clock=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) {
+        IN2020CameraPanel *panel=weakSelf;if(!panel)return;
+        panel.ticks++;panel.heartbeat.text=[NSString stringWithFormat:@"界面运行中 · %u",panel.ticks];
+        if(panel.ticks%10==0)NSLog(@"IN2020 camera UI heartbeat=%u working=%d",panel.ticks,panel.working);
+    }];
     self.sensor=[[UISegmentedControl alloc] initWithItems:@[@"前摄 IMX471",@"长焦 S5K3M5"]];
     self.sensor.selectedSegmentIndex=0;[self.sensor addTarget:self action:@selector(change) forControlEvents:UIControlEventValueChanged];
     [stack addArrangedSubview:self.sensor];
@@ -59,10 +70,11 @@ static UIWindow *cameraWindow;
     if(self.working)return;
     self.working=YES;self.take.enabled=NO;self.sensor.enabled=NO;self.preview.image=nil;
     self.status.text=@"正在取帧，请保持镜头朝向明亮场景…";
+    NSLog(@"IN2020 camera UI capture pressed sensor=%ld",(long)self.sensor.selectedSegmentIndex+1);
     uint32_t sensor=(uint32_t)self.sensor.selectedSegmentIndex+1;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         int error=0;int fd=open("/dev/in2020-camera",O_RDONLY|O_CLOEXEC);
-        uint8_t *raw=NULL,*pixels=NULL;UIImage *image=nil;uint32_t width=0,height=0;uint64_t stamp=0;
+        uint8_t *raw=NULL,*pixels=NULL,*bgra=NULL;UIImage *image=nil;uint32_t width=0,height=0;uint64_t stamp=0;
         if(fd<0)error=errno;
         if(!error && ioctl(fd,IN2020_CAMERA_SNAPSHOT,&sensor)<0)error=errno;
         struct i20_header h={0};
@@ -77,20 +89,29 @@ static UIWindow *cameraWindow;
             pixels=malloc((size_t)width*height);if(!pixels)error=ENOMEM;
             if(!error) {
                 i20_preview(raw,h.width,h.height,h.stride,pixels);
-                NSData *data=[NSData dataWithBytes:pixels length:(NSUInteger)width*height];
+                bgra=malloc((size_t)width*height*4);
+                if(!bgra) {free(raw);free(pixels);dispatch_async(dispatch_get_main_queue(), ^{
+                    self.working=NO;self.status.text=@"预览内存分配失败，请重启测试。";
+                });return;}
+                i20_bgra(pixels,(size_t)width*height,bgra);
+                NSData *data=[NSData dataWithBytes:bgra length:(NSUInteger)width*height*4];
                 CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
-                CGColorSpaceRef space=CGColorSpaceCreateDeviceGray();
-                CGImageRef cg=CGImageCreate(width,height,8,8,width,space,(CGBitmapInfo)kCGImageAlphaNone,provider,NULL,false,kCGRenderingIntentDefault);
+                CGColorSpaceRef space=CGColorSpaceCreateDeviceRGB();
+                CGImageRef cg=CGImageCreate(width,height,8,32,width*4,space,kCGBitmapByteOrder32Little|(CGBitmapInfo)kCGImageAlphaPremultipliedFirst,provider,NULL,false,kCGRenderingIntentDefault);
                 if(cg)image=[UIImage imageWithCGImage:cg];else error=ENOMEM;
                 if(cg)CGImageRelease(cg);CGColorSpaceRelease(space);CGDataProviderRelease(provider);
             }
         }
-        free(raw);free(pixels);
+        free(raw);free(pixels);free(bgra);
         NSLog(@"IN2020 camera UI sensor=%u error=%d frame=%llu",sensor,error,(unsigned long long)stamp);
         dispatch_async(dispatch_get_main_queue(), ^{
+            NSLog(@"IN2020 camera UI main begin frame=%llu",(unsigned long long)stamp);
             self.working=NO;self.take.enabled=error==0;self.sensor.enabled=error==0;self.preview.image=image;
+            NSLog(@"IN2020 camera UI BGRA assigned width=%u height=%u",width,height);
             self.status.text=error?[NSString stringWithFormat:@"取帧失败 (%d)。请保留日志并重新启动测试镜像。",error]:
                 [NSString stringWithFormat:@"%@ · %u×%u · CRC 已校验\n灰度单帧，点击刷新；亮度为显示拉伸。",sensor==1?@"前摄":@"长焦",h.width,h.height];
+            [self.view setNeedsLayout];
+            NSLog(@"IN2020 camera UI main complete frame=%llu",(unsigned long long)stamp);
         });
     });
 }

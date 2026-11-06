@@ -24,13 +24,13 @@ jobs:
           xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -isysroot "$SDK" \
             -O2 -Wall -Wextra -Werror -fobjc-arc -dynamiclib -Iin2020/camera \
             -framework UIKit -framework Foundation -framework CoreGraphics \
-            -install_name /usr/local/lib/in2020-camera-ui-v1.dylib \
-            -o out/in2020-camera-ui-v1.dylib userland/camera/camera_ui.m
-          codesign -s - -f out/in2020-camera-ui-v1.dylib
-          codesign --verify --strict out/in2020-camera-ui-v1.dylib
-          otool -L out/in2020-camera-ui-v1.dylib
+            -install_name /usr/local/lib/in2020-camera-ui-v2.dylib \
+            -o out/in2020-camera-ui-v2.dylib userland/camera/camera_ui.m
+          codesign -s - -f out/in2020-camera-ui-v2.dylib
+          codesign --verify --strict out/in2020-camera-ui-v2.dylib
+          otool -L out/in2020-camera-ui-v2.dylib
           cd out
-          shasum -a 256 in2020-camera-ui-v1.dylib > SHA256SUMS
+          shasum -a 256 in2020-camera-ui-v2.dylib > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: in2020-camera-ui
