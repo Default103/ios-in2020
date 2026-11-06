@@ -19,7 +19,7 @@ static uint32_t pll_old[11],gdsc_old,ref_old,mclk_cfg,mclk_branch;
 static bool arc_owned,pll_owned,gdsc_owned,ref_owned,mipi_owned,mclk_owned;
 static bool branch_on(unsigned i) {
     struct clock_branch *b=&branches[i];vm_offset_t p=b->gcc?gcc:cc;
-    b->old=cr_read(p,b->offset);if(b->old==0xffffffff)return false;
+    b->old=cr_read(p,b->offset);printf("IN2020 RAW: clock branch=%u block=%s offset=%#x before=%#x\n",i,b->gcc?"GCC":"CAMCC",b->offset,b->old);if(b->old==0xffffffff)return false;
     if(b->old&1)return true;
     b->owned=true;
     return cr_put(p,b->offset,b->old|1u,1) && cr_wait(p,b->offset,1u<<31,0,2000);
@@ -64,15 +64,22 @@ bool cr_clocks_up(void) {
         if(!cr_put(cc,0xc144,(gdsc_old|0x800u)&~1u,0x801) || !cr_wait(cc,0xc144,1u<<31,1u<<31,100000))return false;
     }
     if(!(ref_old&1)) {ref_owned=true;if(!cr_put(refgen,0x80,ref_old|1u,1))return false;delay(5);}
+    printf("IN2020 RAW: GDSC enabled now=%#x refgen=%#x\n",cr_read(cc,0xc144),cr_read(refgen,0x80));
     if(!mipi_state(true)) {
-        if(!mipi_state(false))return false;mipi_owned=true;
+        if(!mipi_state(false)) {
+            uint8_t lo=0,hi=0,en=0,status=0,type=0;
+            bool readable=in2020_camera_pmic_read(0x148,4,&type) && in2020_camera_pmic_read(0x148,0x40,&lo) &&
+                in2020_camera_pmic_read(0x148,0x41,&hi) && in2020_camera_pmic_read(0x148,0x46,&en) && in2020_camera_pmic_read(0x148,8,&status);
+            printf("IN2020 RAW: MIPI rail guard rejected readable=%d type=%#x mv=%u en=%#x status=%#x\n",readable,type,lo|(hi<<8),en,status);return false;
+        }mipi_owned=true;
         if(in2020_rpmh_camera_vrm("ldoa9",true))return false;
         bool ready=false;for(unsigned n=0;n<50;++n) {if(mipi_state(true)) {ready=true;break;}delay_for_interval(1,NSEC_PER_MSEC);}
         if(!ready)return false;
     }
-    for(unsigned i=0;i<11;++i) {pll_old[i]=cr_read(cc,pll_regs[i]);if(pll_old[i]==0xffffffff)return false;}
+    printf("IN2020 RAW: MIPI rail ready, snapshot PLL0\n");
+    for(unsigned i=0;i<11;++i) {pll_old[i]=cr_read(cc,pll_regs[i]);if(pll_old[i]==0xffffffff) {printf("IN2020 RAW: inaccessible PLL0 offset=%#x\n",pll_regs[i]);return false;}}
     if(pll_old[0]&1) {
-        if(cr_read(cc,4)!=0x3e || (cr_read(cc,0x40)&0xffff)!=0x8000 || !(cr_read(cc,0)&(1u<<31)))return false;
+        if(cr_read(cc,4)!=0x3e || (cr_read(cc,0x40)&0xffff)!=0x8000 || !(cr_read(cc,0)&(1u<<31))) {printf("IN2020 RAW: active PLL0 rate/lock guard rejected mode=%#x L=%#x alpha=%#x\n",cr_read(cc,0),cr_read(cc,4),cr_read(cc,0x40));return false;}
     } else {
         static const uint32_t setup[][2]={{4,0x3e},{8,0x44},{0x40,0x8000},{0x18,0x20485699},
             {0x1c,0x2261},{0x20,0x329a699c},{0xc,0x3100},{0x10,0x805},{0x14,0}};
@@ -85,6 +92,7 @@ bool cr_clocks_up(void) {
     }
     for(unsigned i=0;i<6;++i) {
         struct clock_root *r=&roots[i];r->old=cr_read(cc,r->cmd+4);
+        printf("IN2020 RAW: root cmd=%#x cfg=%#x command=%#x target=%#x\n",r->cmd,r->old,cr_read(cc,r->cmd),r->value);
         if(r->old==0xffffffff || (cr_read(cc,r->cmd)&1))return false;
         if((r->old&0x371f)==r->value)continue;
         r->owned=true;if(!cr_put(cc,r->cmd+4,(r->old&~0x371fu)|r->value,0x371f) || !update(r->cmd))return false;

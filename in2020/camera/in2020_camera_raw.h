@@ -30,7 +30,8 @@ static inline bool cr_put(vm_offset_t p,unsigned o,uint32_t v,uint32_t mask) {
     if((got&mask)!=(v&mask)) {printf("IN2020 RAW: write offset=%#x wanted=%#x got=%#x mask=%#x\n",o,v,got,mask);return false;}return true;
 }
 static inline bool cr_wait(vm_offset_t p,unsigned o,uint32_t mask,uint32_t want,unsigned us) {
-    for(unsigned n=0;n<us;n+=10) {if((cr_read(p,o)&mask)==want)return true;delay(10);}return false;
+    for(unsigned n=0;n<us;n+=10) {if((cr_read(p,o)&mask)==want)return true;delay(10);}
+    printf("IN2020 RAW: wait timeout offset=%#x mask=%#x wanted=%#x got=%#x us=%u\n",o,mask,want,cr_read(p,o),us);return false;
 }
 bool in2020_camera_pmic_read(unsigned,unsigned,uint8_t *);
 int in2020_rpmh_camera_vrm(const char *,bool);
