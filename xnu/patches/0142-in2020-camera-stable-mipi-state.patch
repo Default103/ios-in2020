@@ -1,0 +1,43 @@
+--- a/bsd/dev/in2020_camera_clocks.c
++++ b/bsd/dev/in2020_camera_clocks.c
+@@ -65,15 +65,32 @@
+     }
+     if(!(ref_old&1)) {ref_owned=true;if(!cr_put(refgen,0x80,ref_old|1u,1))return false;delay(5);}
+     printf("IN2020 RAW: GDSC enabled now=%#x refgen=%#x\n",cr_read(cc,0xc144),cr_read(refgen,0x80));
+-    if(!mipi_state(true)) {
+-        if(!mipi_state(false)) {
+-            uint8_t lo=0,hi=0,en=0,status=0,type=0;
+-            bool readable=in2020_camera_pmic_read(0x148,4,&type) && in2020_camera_pmic_read(0x148,0x40,&lo) &&
+-                in2020_camera_pmic_read(0x148,0x41,&hi) && in2020_camera_pmic_read(0x148,0x46,&en) && in2020_camera_pmic_read(0x148,8,&status);
+-            printf("IN2020 RAW: MIPI rail guard rejected readable=%d type=%#x mv=%u en=%#x status=%#x\n",readable,type,lo|(hi<<8),en,status);return false;
+-        }mipi_owned=true;
++    /* TELE2's final snapshot is ready (1200mV/enable80/status87) after
++     * a transient failed read. Require two consecutive strict observations
++     * before deciding whether the inherited rail is on or off. */
++    int initial=0,previous=0;unsigned consecutive=0;
++    for(unsigned n=0;n<50;++n) {
++        int state=mipi_state(true)?1:(mipi_state(false)?-1:0);
++        if(state && state==previous)++consecutive;else consecutive=state?1:0;
++        previous=state;
++        if(consecutive>=2) {initial=state;printf("IN2020 RAW: MIPI stable inherited state=%d observations=%u\n",state,n+1);break;}
++        delay_for_interval(1,NSEC_PER_MSEC);
++    }
++    if(!initial) {
++        uint8_t lo=0,hi=0,en=0,status=0,type=0;
++        bool readable=in2020_camera_pmic_read(0x148,4,&type) && in2020_camera_pmic_read(0x148,0x40,&lo) &&
++            in2020_camera_pmic_read(0x148,0x41,&hi) && in2020_camera_pmic_read(0x148,0x46,&en) && in2020_camera_pmic_read(0x148,8,&status);
++        printf("IN2020 RAW: MIPI stable-state timeout readable=%d type=%#x mv=%u en=%#x status=%#x\n",readable,type,lo|(hi<<8),en,status);return false;
++    }
++    if(initial<0) {
++        mipi_owned=true;
+         if(in2020_rpmh_camera_vrm("ldoa9",true))return false;
+-        bool ready=false;for(unsigned n=0;n<50;++n) {if(mipi_state(true)) {ready=true;break;}delay_for_interval(1,NSEC_PER_MSEC);}
++        bool ready=false;consecutive=0;
++        for(unsigned n=0;n<50;++n) {
++            if(mipi_state(true))++consecutive;else consecutive=0;
++            if(consecutive>=2) {ready=true;break;}
++            delay_for_interval(1,NSEC_PER_MSEC);
++        }
+         if(!ready)return false;
+     }
+     printf("IN2020 RAW: MIPI rail ready, snapshot PLL0\n");
