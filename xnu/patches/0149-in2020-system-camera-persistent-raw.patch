@@ -1,0 +1,31 @@
+--- a/bsd/dev/in2020_camera_capture.c
++++ b/bsd/dev/in2020_camera_capture.c
+@@ -147,7 +147,7 @@
+ static bool capture(bool save) {
+     phy=csid=ife=gic=0;irq_masked=0;
+     phy_active=csid_active=ife_active=false;
+-    bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false;
++    bool clocks=false,sensor=false,dma=false,stream=false,frame=false,exported=false,validated=false;
+ 
+     if(!cr_sensor_plan_valid()) {printf("IN2020 RAW: rejected private front plan before hardware writes\n");return false;}
+     printf("IN2020 RAW: native one-frame sensor=%#x RAW10 %ux%u stride=%u\n",cr_config.id,CR_WIDTH,CR_HEIGHT,CR_STRIDE);
+@@ -187,15 +187,16 @@
+             for(unsigned i=0;i<CR_BYTES;++i)changed+=p[i]!=0xa5;
+             uint32_t crc=cp_crc(p,CR_BYTES);delay_for_interval(10,NSEC_PER_MSEC);cr_dma_invalidate();
+             if(changed>CR_BYTES/16 && cp_crc(p,CR_BYTES)==crc && cr_dma_ok()) {
+-                exported=save?export_frame(crc):true;
++                validated=true;
++                exported=export_frame(crc);
+                 if(!save)cr_system_crc=crc;
+             }
+         }
+     }
+     if(dma)cr_dma_down(stopped);
+     irqs_restore(stopped);
+-    printf("IN2020 RAW: result frame-IRQ=%d cleanup=%d exported=%d; success requires valid file payload\n",frame,stopped,exported);
+-    return exported && stopped && cr_dma_reusable();
++    printf("IN2020 RAW: result frame-IRQ=%d cleanup=%d validated=%d exported=%d\n",frame,stopped,validated,exported);
++    return (save?exported:validated) && stopped && cr_dma_reusable();
+ }
+ 
+ void in2020_camera_capture(void) {(void)capture(true);}
