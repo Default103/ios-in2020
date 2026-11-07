@@ -243,14 +243,8 @@ python tools/preview-in2020-native-raw.py <帧目录>/native-frame.bin \
 
 以下为原工作机本地路径索引，仅帮助同工作区的接手者定位，文件内容未上传：
 
-- 工作区根：`M:/ios-in2020`；仓库：`projects/ios-in2020-main`。
-- `logs/camera-front-readback-20261107/`：最新独立导出日志、RAW、CRC 元数据和实际场景预览。
-- `logs/camera-system1-20261106/`、`camera-system2-20261107/`、`camera-system3-20261107/`：三轮系统显示问题日志。
-- `logs/camera-native-tele5-20261106/`：长焦最后一轮 RAW/预览与证据。
-- `builds/xnu-42310641810/in2020-system-camera3/`：已测系统镜像，以及 `front-profile/`、`tele-profile/` 自动 RAW 子镜像。
-- `builds/camera-ui-42310641719/`：UI v3 库与摘要清单。
-- `firmware/in2020-camera-stock-20261102/`：原厂传感器模块；`projects/ios-in2020/camera-reference/kona/`：固定版本原厂源码/参考清单；均需在原工作区验证存在。
+-
 
 使用临时启动，保留 GPT、bootloader、recovery、modem、persist、标定和备份；不要为显示排障刷写这些分区。不得接管活动 SMMU context、启用全局 bypass、忽略 CRC/guard/读回失败或覆盖不匹配的已安装 UI 库。不要把原厂固件、私人照片、RAW 或设备转储提交到仓库。
 
-用户已授权本次项目的源码 push 和 macOS 构建；此报告中的历史授权不应被远端 agent 当作其自身环境的额外凭据或越权权限。继续工作仍须遵守当前会话和执行环境的权限边界。
+此报告中的历史授权不应被远端 agent 当作其自身环境的额外凭据或越权权限。继续工作仍须遵守当前会话和执行环境的权限边界。
