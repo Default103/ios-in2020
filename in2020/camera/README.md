@@ -1,118 +1,46 @@
 # IN2020 native camera
 
-The five sensors have been identified through the recovery kernel. This native
-XNU implementation has captured and independently CRC-checked native front
-IMX471 and tele S5K3M5 RAW frames. System UI testing is the next step.
+Current handoff: [camera adaptation report, 2026-11-07](../../docs/IN2020-camera-handoff-20261107.md).
+Read that report before continuing; it distinguishes measured results from hypotheses,
+indexes source files and patches, and records build/readback instructions.
 
-The first target is the fixed-focus IMX471 front sensor: slot2, CCI1 master1,
-CSI PHY3. `in2020_camera_board.h` is checked against the measured FDT by
-`tools/verify-in2020-camera-board.py`. GPIO107/108 are this master's SDA/SCL;
-GPIO103/104 belong to a different controller/master route. MCLK3 uses GPIO97,
-reset GPIO78, front VANA gate GPIO24. PM8009 supplies use RPMh resources ldof3
-(1056000uV) and ldof7 (1800000uV); the shared pm8150a BOB resource is bobc1,
-with a 3008000..3960000uV range. The BOB must not be confused with touch's
-ldoa13 or the unrelated reference phone's I2C PM8008.
+## Verified status
 
-Live FDT selects CSIPHY1.2.1 and CSID/VFE480, not the earlier prepared 170
-headers. Front PHY3 is 0xac70000; selected future raw route is CSID-lite0
-0xacd9200 / IFE-lite0 0xacd9000. Camera IOMMU SID mask is 0x400, not the
-reference phone's 0x4e0. Actual SIDs and IOVA pool are in the checked header.
-The raw route still requires its own clock/power/SMMU and frame verification.
+- IMX471 front: native XNU RAW10 capture, export, independent length/CRC checking,
+  and a recognizable real scene have been demonstrated repeatedly.
+- S5K3M5 tele: native RAW export and host CRC verification passed; the user accepted
+  the scene preview. Dynamic range/exposure and image quality remain open.
+- IMX689 main and IMX586 ultra: offline mode/board/C-PHY preparation only;
+  no native frame verification yet.
+- The SpringBoard camera test panel appears and front snapshot/read/CRC/main-thread
+  update succeed. UIView rasterization also finishes, but the user still cannot see
+  the image and subsequent display submissions stop. Visible preview is unresolved.
+- No continuous video, calibrated color, automatic exposure/focus, AVFoundation
+  integration or stock Camera.app support has been established.
 
-Patch0131 adds a dormant driver. Only `in2020cam=1` starts its observer thread.
-It reads the five pin states and PMIC observer registers at candidate PM8009
-peripherals, with arbiter-version and unique APID checks. Its only MMIO writes
-are bounded SPMI EXT_READL observer commands; it does not configure PMICs,
-pins, supplies, clocks, sensors, ISP or DMA. Unsupported stages are rejected.
-No camera device node or fake frames are exposed.
+## Entry points
 
-Next: build this overlay after the pending speaker test, temporarily boot the
-camera preflight and review actual rail identities/values and reset state.
-Then add isolated front power-up, 19.2MHz MCLK3, bounded CCI read of ID0x0471
-and cleanup. Capture follows with a bounded 2328x1748 RAW10 mode, subject to
-independent module/register checks, CSI480 setup and shared SMMU allocation.
-The candidate mode has not been executed. Sensor tables and calibration stay
-local; board code, tests and documentation may be published.
+`in2020cam=1` runs the observer. `in2020cam=2` performs an automatic finite native
+capture/export. `in2020cam=3` installs the versioned UIKit test library and exposes
+`/dev/in2020-camera` for manual front/tele snapshots. Current UI v3 uses an opaque
+UIView backing and logs heartbeat/main/raster progress.
 
-Provenance: OnePlusOSS/android_kernel_oneplus_sm8250 commit
-98719830b0de5584f5588bbe9f4c8304d97a64c6, recovery FDT and validated identity
-probes. Relevant CCI/480 source files are pinned in local camera-reference/kona/
-isp480-manifest.json. HakiOS a3384e03 camera code was reviewed as a reference;
-its board constants and unsafe buffer lifetimes are not imported.
+`in2020_camera_capture.c` owns the capture and cdev flow; sensor/clocks/dma modules
+handle their hardware domains. `in2020_camera_plan.h` validates private modes.
+`in2020_camera_user.h` is the shared ioctl ABI. The matching cumulative patches in
+`xnu/patches/` are the actual XNU build inputs. Keep sources and patches in sync.
 
-`tools/build-in2020-front-mode.py` extracts only the pinned measured IMX471
-module into a local candidate plan. The mode's dimensions, line/frame timing,
-RAW10 format and four-lane setting are checked independently against register
-values. It retains 155 init and 57 mode records, rejects stream-control/OTP
-registers and unsupported widths/operations/delays. No stream-on is included
-and the tool performs no hardware I/O. Its output remains private and has not
-been executed on the sensor. Synthetic gate tests run in host CI.
+Patch 0149 adds file export to validated system-button captures. Earlier stage 3
+builds kept pixels only in RAM: their `exported=1` result flag did not prove a file
+existed. Require an actual export path with error=0/residual=0, then independent
+readback. Patch 0149 has not yet been verified on the phone at this handoff.
 
+Build with `tools/build-in2020-camera-raw.py` or `tools/build-in2020-camera-system.py`;
+private original-module/PHY/loader assets are required locally. Read exact successful
+export paths with `tools/read-in2020-native-raw.py`, then create display-only previews
+with `tools/preview-in2020-native-raw.py`. Keep images, firmware and logs out of git.
 
-Stage 2 (`in2020cam=2`) integrates native front-camera power, MCLK3,
-bounded CCI configuration, CSI480/IFE-lite Bus v3 and one SMMU-backed frame.
-It exports full 2328x1748 MIPI RAW10 (2912-byte stride) to a unique
-`/private/var/tmp/in2020-front-raw10-<machtime>.bin`. The 64-byte little-endian
-I20FRAME header includes geometry, CRC32 and capture time. Export requires
-fresh DMA completion, intact guards, changed payload, clean shutdown and
-stable CRC. There is no test-pattern source. Buffers remain wired, and
-uncertain cleanup retains the isolated mapping until reboot.
-
-Build with `tools/build-in2020-camera-raw.py` and a kernel containing patch
-0132. Private sensor/PHY data is inserted locally into ADT, never committed.
-Host checks and cross-compilation pass; actual native frame capture remains
-unverified. Earlier stage-1-only next steps above are superseded by this
-integrated capture at the user's request.
-
-After returning from the native boot, retrieve the exact successful export
-path recorded in the kernel log using `tools/read-in2020-native-raw.py`.
-It reads bounded userdata blocks from root TWRP without mounting or writing
-the partition, resolves the HFS+ catalog and checks the complete frame CRC.
-The camera itself runs only in XNU. The reader refuses unsupported overflow
-extents, ambiguous paths, unexpected geometry and incomplete payloads.
-
-
-The finite capture path may use a verified subset of whole-IFE FDT routes.
-This requires hardware fault-on-unmatched mode, fault reporting, enabled
-translation and a clean global fault latch. Rejected mappings are restored
-and never treated as mapped. Every polling interval checks DMA guards and
-fault state before accepting completion. An unidentified stream stops capture
-and records raw fault syndromes; no translation bypass is enabled.
-
-
-On 2026-11-06, kernel build 42229170609 captured a real IMX471 frame through
-XNU, CSID480 and IFE-lite DMA. The exported 2328x1748 RAW10 payload was read
-back from HFS and independently verified for length and CRC32. CSI reported
-no ECC/CRC errors, and hardware cleanup and owned SMMU restoration passed.
-`tools/preview-in2020-native-raw.py` validates and unpacks this file format,
-producing an uncalibrated grayscale mosaic and a separately labeled display
-stretch. Actual frame data remains private. Color, exposure control, live
-preview, Camera app integration and the visible iOS startup issue remain open.
-
-
-Rear-camera work starts with S5K3M5 mode3, 2104x1560 RAW10. The kernel
-selects the validated private tele profile from ADT and preserves per-command
-8/16-bit widths and indirect-write order. `build-in2020-camera-raw.py
---sensor tele` packages this profile; front remains the default. Separate
-readback checks still gate success. The tele profile has compiled and passed
-host checks but has not yet captured a native frame. IMX689 MP and IMX586
-plans have been checked offline; their C-PHY hardware path remains pending.
-System viewfinder integration follows the three rear-camera tests.
-
-
-Stage 3 (`in2020cam=3`) offers an opt-in system test panel for these two sensors.
-It installs a digest-checked versioned UIKit library and adds it to SpringBoard's
-existing injection list. After 30 seconds it offers front/tele selection, manual
-capture/refresh and collapse/reopen. Each request runs the reviewed finite
-capture, stops the sensor and DMA, checks guards/stable CRC, restores hardware,
-then exposes that frame. The panel validates header and CRC independently.
-It displays a downsampled grey RAW preview with percentile contrast for viewing;
-this is not calibrated color, automatic exposure, continuous video or AVFoundation.
-
-Only the two fixed private ADT plans are selectable. One client opens the device;
-concurrent reads/captures fail busy. Any failed capture blocks further hardware
-requests until reboot. Wired storage is reused only after exact mapping cleanup;
-uncertain mappings remain quarantined. System window rendering is not verified.
-Build UI with `in2020-camera-userland.yml`, kernel with `xnu.yml`, then package
-locally with `tools/build-in2020-camera-system.py`. Module tables and captured
-images remain private.
+Hardware provenance: OnePlusOSS SM8250 commit
+`98719830b0de5584f5588bbe9f4c8304d97a64c6`, measured recovery FDT and verified native
+register/readback results. Board constants and unsafe lifetimes from other phones
+must not be copied blindly. There is no test-pattern source in the native frame path.
